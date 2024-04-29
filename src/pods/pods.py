@@ -29,67 +29,71 @@ from src.env.Pendulum import State
 
 @flax.struct.dataclass
 class TrainState:
-    environment: envs.Env
     policy_model: DeterministicPolicy
     policy_params: Params
-    optimizer: optax.OptState
-
-    def clear_state_action_dict(self):
-        self.state_action_dict = {}
+    optimizer_state: optax.OptState
+    optimizer: optax.GradientTransformation
     
-#@jax.jit
-def generate_trajectory(train_state: TrainState, trajectory_length: int, prng_key: PRNGKey):
-    environment = train_state.environment
+# @jax.jit
+def generate_trajectory(environment, train_state: TrainState, trajectory_length: int, prng_key: PRNGKey):
+    
     states = jnp.zeros((trajectory_length, environment.observation_size))
     actions = jnp.zeros((trajectory_length, environment.action_size))
     total_reward = jnp.zeros(1)
     state: State = environment.reset(prng_key)
+    
     for i in range(trajectory_length):
         action = train_state.policy_model.apply(train_state.policy_params, state.obs)
         next_state = environment.step(state, action)
         states=states.at[i].set(state.obs)
         total_reward += state.reward
-        actions=actions.at[i].set( action)
+        actions=actions.at[i].set(action)
         state = next_state
 
     return states, actions, total_reward
 
 
 #@jax.jit
-def fo_update_action_sequence(environment, states, actions, alpha_a):
+def fo_update_action_sequence(environment, states, actions, prng_key, alpha_a):
+
+    # print(states)
+    # print(actions)
+    # print(prng_key)
     
-    #@jax.jit
     def total_reward(environment, states, actions):
         total_reward = jnp.zeros(1)
-        state = states[0]
+        state = environment.reset(prng_key)
 
         for i in range(states.shape[0]):
             action = actions[i]
             next_state = environment.step(state, action)
-            reward += next_state.reward
+            total_reward += next_state.reward
             state = next_state
-
-        return total_reward
+        return jnp.reshape(total_reward, ())
     
-    progress, grad = jax.value_and_grad(fun=total_reward, argnums=1)(environment, states, actions)
+    grad = jax.grad(fun=total_reward, argnums=2)(environment, states, actions)
+    #print(grad)
     improved_action_sequence = actions + alpha_a * grad
     return improved_action_sequence
 
-#@jax.jit
 def update_policy(states, actions, train_state):
 
-    #@jax.jit
-    def loss_fn_policy(policy_outputs, targets):
+    params = train_state.policy_params
+    optimizer_state = train_state.optimizer_state
+    optimizer = train_state.optimizer
+
+    @jax.jit
+    def loss_fn_policy(params, state, targets):
+        policy_outputs = train_state.policy_model.apply(params, state)
         return jnp.mean(0.5*jnp.square(policy_outputs - targets))
 
     for state, action in zip(states, actions):
-        policy_outputs = train_state.policy_model.apply(train_state.policy_params, state)
-        loss = loss_fn_policy(policy_outputs, action)
-        grad = jax.grad(loss)(train_state.policy_params)
-        optimizer_state = optax.adam().update(grad, optimizer_state)
-        train_state = train_state.replace(optimizer=optimizer_state)
-        params = optax.apply_updates(train_state.policy_params, optimizer_state)
-        train_state = train_state.replace(policy_params=params)
+        grads = jax.grad(loss_fn_policy, argnums=0)(params, state, action)
+        updates, new_opt_state = optimizer.update(grads, optimizer_state)
+        new_params = optax.apply_updates(train_state.policy_params, updates)
+        
+        train_state = train_state.replace(optimizer_state=new_opt_state)
+        train_state = train_state.replace(policy_params=new_params)
 
     return train_state
 
@@ -113,24 +117,24 @@ def train(
 
     # get a random key
     key = jax.random.PRNGKey(0)
-    key, subkey = jax.random.split(key)
+    new_key, subkey = jax.random.split(key)
 
     # Define the policy and initialize it
     observation_size = int(environment.observation_size)
     action_size = int(environment.action_size)
-    print(action_size)
     policy_model = DeterministicPolicy(observation_size=observation_size,action_size= action_size)
-    print( jnp.ones((observation_size,)))
-    policy_params = policy_model.init(subkey, jnp.ones((observation_size,)))
+    policy_params = policy_model.init(key, jnp.ones((observation_size,)))
+    
     # Define the optimizer
-    optimizer_state = optax.adam(learning_rate=1e-3).init(policy_params)
+    optimizer = optax.adam(learning_rate=1e-3)
+    optimizer_state = optimizer.init(policy_params)
 
     # Initialize the training state
     train_state = TrainState(
-        environment=environment,
         policy_model=policy_model, 
         policy_params=policy_params,
-        optimizer=optimizer_state)
+        optimizer_state=optimizer_state,
+        optimizer=optimizer)
     
     if progress_fn is None:
         progress_fn = progress_f
@@ -147,22 +151,28 @@ def train(
     for epoch in range(epochs):
         trajectories = dict()
         # 1 - 3
+        
         for i in range(num_samples):
-            print("here")
-            key, subkey = jax.random.split(key)
-            states, actions, total_reward = generate_trajectory(train_state, trajectory_length, subkey)
-            print("there")
+            new_key2, subkey2 = jax.random.split(new_key)
+            new_key = new_key2
 
-            trajectories[i] = (states, actions)
+            states, actions, total_reward = generate_trajectory(environment, train_state, trajectory_length, subkey2)
+            trajectories[i] = (states, actions, subkey2)
+
             print("sample:",i,"out of ",num_samples,"total reward:",total_reward,"epoch:",epoch)
         
         progress_fn(x_data,y_data, epoch, total_reward)
         # 4 - 6, first order update
-        jax.tree_util.tree_map(lambda states_actions: (states_actions[0], fo_update_action_sequence(environment, states_actions[0], states_actions[1], alpha_a)), trajectories)
+        updated_trajectories = jax.tree_util.tree_map(lambda states_actions_initialkey: 
+                               (states_actions_initialkey[0], 
+                                fo_update_action_sequence(environment, states_actions_initialkey[0], states_actions_initialkey[1], states_actions_initialkey[2], alpha_a)), 
+                                trajectories, is_leaf=lambda x: isinstance(x, tuple) and len(x) == 3)
         
+            
         # 7
         for j in range(epochs):
-            for states, actions in trajectories.values():
+            for states, actions in updated_trajectories.values():
+                #print("states:",states,"actions:",actions,"train_state:",train_state)
                 train_state = update_policy(states, actions, train_state)
             print("sample:",j,"out of ",epochs)
             
