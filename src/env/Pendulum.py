@@ -20,6 +20,7 @@ import mujoco
 from mujoco import mjx
 import numpy as np
 from functools import partial
+from jax import vmap
 
 @struct.dataclass
 class State(base.Base):
@@ -51,6 +52,7 @@ class InvertedPendulum(PipelineEnv):
     super().__init__(sys=sys, backend=backend, **kwargs)
   
   @partial(jax.jit, static_argnums=(0,))
+  #@vmap
   def reset(self, rng: jax.Array) -> State:
     """Resets the environment to an initial state."""
     rng, rng1, rng2, rng3 = jax.random.split(rng,4)
@@ -70,6 +72,7 @@ class InvertedPendulum(PipelineEnv):
     return State(pipeline_state, obs, reward, done,target, metrics)
   
   @partial(jax.jit, static_argnums=(0,))
+  #@vmap
   def step(self, state: State, action: jax.Array) -> State:
     """Run one timestep of the environment's dynamics."""
     pipeline_state = self.pipeline_step(state.pipeline_state, action)
