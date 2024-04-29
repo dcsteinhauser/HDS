@@ -52,7 +52,6 @@ ipython==8.23.0
 isoduration==20.11.0
 itsdangerous==2.2.0
 jax==0.4.26
-jaxlib==0.4.26
 jaxopt==0.8.3
 jedi==0.19.1
 Jinja2==3.1.3
