@@ -20,6 +20,8 @@ from flax import linen as nn
 import jax
 import jax.numpy as jnp
 import optax
+import matplotlib.pyplot as plt
+from IPython.display import clear_output
 
 from ..policy.DeterministicPolicy import DeterministicPolicy
 from ..env.Pendulum import State
@@ -39,16 +41,17 @@ class TrainState:
 def generate_trajectory(environment: envs.Env, train_state: TrainState, trajectory_length: int, prng_key: PRNGKey):
     states = jnp.zeros((trajectory_length, environment.observation_size))
     actions = jnp.zeros((trajectory_length, environment.action_size))
-
+    total_reward = jnp.zeros(1)
     state: State = environment.reset(prng_key)
     for i in range(trajectory_length):
         action = train_state.policy_model.apply(train_state.policy_params, state.obs)
         next_state = environment.step(state, action)
         states[i] = state.obs
+        total_reward += state.reward
         actions[i] = action
         state = next_state
 
-    return states, actions
+    return states, actions, total_reward
 
 
 @jax.jit
@@ -57,7 +60,7 @@ def fo_update_action_sequence(environment, states, actions, alpha_a):
     @jax.jit
     def total_reward(environment, states, actions):
         state: State = environment.reset()
-        total_reward = jnp.zeros(1);
+        total_reward = jnp.zeros(1)
     
         for i in range(states.shape[0]):
             action = actions[i]
@@ -87,7 +90,17 @@ def update_policy(states, actions, train_state):
         params = optax.apply_updates(train_state.policy_params, optimizer_state)
         train_state = train_state.replace(policy_params=params)
 
-    return train_state;
+    return train_state
+
+def progress_f(x_data,y_data,epoch,reward):
+    x_data.append(epoch)
+    y_data.append(reward)
+    clear_output(wait=True)
+    plt.xlabel('epoch')
+    plt.ylabel('total reward')
+    plt.plot(x_data, y_data)
+    plt.show()
+
 
 def train(
     environment: envs.Env,
@@ -118,6 +131,9 @@ def train(
         policy_params=policy_params,
         optimizer=optimizer_state)
     
+    if progress_fn is None:
+        progress_fn = progress_f
+    
     # 1. run m episodes of the environment using the policy, of length trajectory_length
     # 2. collect the states and actions encountered in each episode
     # 3. for each episode initialize an array which has the sequence of actions taken by the policy
@@ -125,15 +141,17 @@ def train(
     # 5. calculate the gradient of the total reward with respect to the array of actions
     # 6. update the array of actions
     # 7. perform supervised learning on the policy using the array of actions
-
-    for _ in epochs:
+    x_data,y_data = [],[]
+    
+    for epoch in epochs:
         trajectories = set()
         # 1 - 3
         for i in num_samples:
             key, subkey = jax.random.split(key)
-            states, actions = generate_trajectory(environment, train_state, trajectory_length, subkey)
+            states, actions, total_reward = generate_trajectory(environment, train_state, trajectory_length, subkey)
             trajectories.add((states, actions))
-
+        
+        progress_fn(x_data,y_data, epoch, total_reward)
         # 4 - 6, first order update
         jax.tree_util.tree_map(lambda states, actions: (states, fo_update_action_sequence(environment, states, actions, alpha_a)), trajectories)
         
