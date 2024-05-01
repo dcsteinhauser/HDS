@@ -56,30 +56,7 @@ def generate_trajectory_parallel(environment, train_state: TrainState, trajector
     actions=jax.numpy.reshape(updatedactions, (num_samples, trajectory_length, environment.action_size))
     return states, actions
 
-# @jax.jit
-"""def bodyfun(val,i):
-    tempval = val[i]s
-    val[i] = #jax.grad()
-    return val"""
-
-def fo_update_action_sequenceurmom(environment, actions, prng_key, alpha_a):
-
-    # @jax.jit
-    def total_reward(environment, actions, prng_key):
-        
-        def reward_step(states, action):
-            return environment.step(states, action), states.reward
-        
-        initial_states = environment.reset(prng_key)
-        actions_w_changed_axis = jnp.reshape(actions, (actions.shape[1], actions.shape[0], actions.shape[2]))
-        _, rewards = jax.lax.scan(f=reward_step, init=initial_states, xs=actions_w_changed_axis)
-        return jnp.sum(rewards, axis=0)
-    
-    grad = jax.grad(total_reward, argnums=1)(environment, actions, prng_key)
-
-    improved_action_sequence = actions + alpha_a * grad
-    return improved_action_sequence
-
+@partial(jax.vmap,in_axes=(None,0,0,None),out_axes=0,axis_name="batch")
 def fo_update_action_sequence(environment, actions, prng_key, alpha_a):
 
     # @jax.jit
@@ -91,13 +68,12 @@ def fo_update_action_sequence(environment, actions, prng_key, alpha_a):
 
         initial_states = environment.reset(prng_key)
         _, rewards = jax.lax.scan(f=reward_step, init=initial_states, xs=actions)
-        return jnp.sum(rewards, axis=1)
+        return jnp.sum(rewards, axis=0)
     
-    grad = jax.vmap(jax.grad(total_reward, argnums=1), in_axes=(None, 0, None), out_axes=0)(actions, prng_key)
+    grad =  jax.grad(total_reward, argnums=1)(environment, actions, prng_key)
 
     improved_action_sequence = actions + alpha_a * grad
     return improved_action_sequence
-
 
 @jax.jit
 def loss_fn_policy(params, state, targets, train_state):
@@ -150,18 +126,16 @@ def train(
         optimizer_state=optimizer_state,
         optimizer=optimizer)
     
-    
+    #nonbactehd env
+    non_batched_env= env 
     # Wrap the environment to allow vmapping
     environment = envs.training.wrap(env, episode_length=trajectory_length,)
-    
     
     # 1. run m episodes of the environment using the policy, of length trajectory_length
     # 2. collect the states and actions encountered in each episode
     # 3. for each episode initialize an array which has the sequence of actions taken by the policy
     # 4. rerun the environment, using the array of actions as input, and calculate the total reward
-    # 5. calculate the gradient of the total reward with respect to the array of actions
-    # 6. update the array of actions
-    # 7. perform supervised learning on the policy using the array of actions
+    # 5. calculate the gradient of the total reward with respect to the array of aprng_key[0]
 
     for _ in range(epochs):
         # 1 - 3
@@ -178,7 +152,7 @@ def train(
         file.write(content)
         file.close()
         # updated action sequence
-        updated_trajectories = (trajectories[0], fo_update_action_sequence(environment, trajectories[1], subkeys, alpha_a))
+        updated_trajectories = (trajectories[0], fo_update_action_sequence(non_batched_env, trajectories[1], subkeys, alpha_a))
         
         # supervised learning
         for j in range(epochs):
