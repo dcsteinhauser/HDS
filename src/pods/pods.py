@@ -77,10 +77,19 @@ def fo_update_action_sequence(environment, actions, prng_key, alpha_a):
     return improved_action_sequence
 
 
-def mse_loss(inputs,targets):
-    diff = inputs - targets
-    loss = jnp.sum((1/diff.size)*0.5*jnp.power(diff,jnp.ones(diff.shape)*2))
-    return loss
+"""def mse_loss(inputs,targets):
+    diff = jax.pure_callback(inputs - targets)
+    print("inputs:")
+    print(inputs)
+    print("targets:")
+    print(targets)
+    print("shapa")
+    print(diff.shape)
+    print(diff)
+    loss= 0.5*jnp.inner(diff,diff)
+    print("loss")
+    print(loss)
+    return loss"""
 
 def update_policy(states, actions, train_state):
     params = train_state.policy_params
@@ -89,15 +98,14 @@ def update_policy(states, actions, train_state):
     optimizer = train_state.optimizer
     
     policy_output_fn = policy_model.apply
-    loss_fn = lambda params, states, actions: mse_loss(policy_output_fn(params,states), actions)
+    loss_fn = lambda params, states, actions: 0.5*optax.losses.squared_error(policy_output_fn(params,states), actions).mean()
     # print(loss_fn(params, states, actions))
     value,grad = jax.value_and_grad(loss_fn)(params, states, actions)
-
     updates, optimizer_state = optimizer.update(grad, optimizer_state)
     new_params = optax.apply_updates(params, updates)
     train_state = train_state.replace(policy_params=new_params, optimizer_state=optimizer_state)
 
-    return value,train_state
+    return value, train_state
 
 
 
@@ -122,7 +130,20 @@ def train(
     t0= time.time()
 
     # Define the optimizer
-    optimizer = optax.adam(learning_rate=1e-4)
+    #optimizer = optax.adam(learning_rate=1e-4)
+
+    scheduler = optax.exponential_decay(
+    init_value=1e-5,
+    transition_steps=1000,
+    decay_rate=0.99)
+    # Combining gradient transforms using `optax.chain`.
+    optimizer = optax.chain(
+    optax.clip_by_global_norm(1.0),  # Clip by the gradient by the global norm.
+    optax.scale_by_adam(),  # Use the updates from adam.
+    optax.scale_by_schedule(scheduler),  # Use the learning rate from the scheduler.
+    # Scale updates by -1 since optax.apply_updates is additive and we want to descend on the loss.
+    optax.scale(-1.0)
+    )
     optimizer_state = optimizer.init(policy_params)
 
     # Initialize the training state
@@ -154,6 +175,8 @@ def train(
         trajectories = generate_trajectory_parallel(environment, train_state, trajectory_length, num_samples, subkeys)
         totalreward=trajectories[2]
         trajectories=trajectories[:2]
+        print(trajectories[0])
+
 
         print("Total Reward",jnp.mean(totalreward))
         # updatedaction sequence
@@ -165,7 +188,7 @@ def train(
             for state_sequence, action_sequence in zip(states, actions):
                 value,train_state= update_policy(state_sequence, action_sequence, train_state)
             print("big epoch:",i,"small epoch:",j,"Loss",value)
-            if(value<1e-4):
+            if(value<1e-4 or value == jnp.nan):
                 break
        
         
