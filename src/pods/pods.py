@@ -93,7 +93,7 @@ def fo_update_action_sequence(environment, actions, prng_key, alpha_a):
         _, rewards = jax.lax.scan(f=reward_step, init=initial_states, xs=actions)
         return jnp.sum(rewards, axis=1)
     
-    grad = jax.vmap(jax.vmap(jax.grad(total_reward, argnums=1), in_axes=(None, 0, None), out_axes=0))(environment, actions, prng_key)
+    grad = jax.vmap(jax.grad(total_reward, argnums=1), in_axes=(None, 0, None), out_axes=0)(actions, prng_key)
 
     improved_action_sequence = actions + alpha_a * grad
     return improved_action_sequence
@@ -122,7 +122,7 @@ def update_policy(states, actions, train_state):
     return train_state
 
 def train(
-    environment,
+    env,
     trajectory_length: int,
     num_samples: int,
     epochs: int,
@@ -134,8 +134,8 @@ def train(
     new_key, subkey = jax.random.split(key)
 
     # Define the policy and initialize it
-    observation_size = int(environment.observation_size)
-    action_size = int(environment.action_size)
+    observation_size = int(env.observation_size)
+    action_size = int(env.action_size)
     policy_model = DeterministicPolicy(observation_size=observation_size,action_size= action_size)
     policy_params = policy_model.init(key, jnp.ones((observation_size,)))
     
@@ -150,8 +150,9 @@ def train(
         optimizer_state=optimizer_state,
         optimizer=optimizer)
     
+    
     # Wrap the environment to allow vmapping
-    environment = envs.training.wrap(environment, episode_length=trajectory_length,)
+    environment = envs.training.wrap(env, episode_length=trajectory_length,)
     
     
     # 1. run m episodes of the environment using the policy, of length trajectory_length
