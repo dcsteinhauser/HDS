@@ -1,5 +1,6 @@
 import functools
 
+from brax import envs
 from brax.training.types import Params
 from brax.training.types import PRNGKey
 import flax
@@ -21,44 +22,62 @@ class TrainState:
     optimizer: optax.GradientTransformation
     
 # @jax.jit
-def generate_trajectory(environment, train_state: TrainState, trajectory_length: int, prng_key: PRNGKey):
+def generate_trajectory(environment, train_state: TrainState, trajectory_length: int, num_samples, prng_keys: PRNGKey):
     
-    states = jnp.zeros((trajectory_length, environment.observation_size))
-    actions = jnp.zeros((trajectory_length, environment.action_size))
-    total_reward = jnp.zeros(1)
-    state: State = environment.reset(prng_key)
+    states = jnp.zeros((num_samples, trajectory_length, environment.observation_size))
+    actions = jnp.zeros((num_samples, trajectory_length, environment.action_size))
+    state: State = environment.reset(prng_keys)
     
+    # carry is the state, xs are the actions, init is the first state, y is the 
+    # 
     for i in range(trajectory_length):
         action = train_state.policy_model.apply(train_state.policy_params, state.obs)
         next_state = environment.step(state, action)
-        states=states.at[i].set(state.obs)
-        total_reward += state.reward
-        actions=actions.at[i].set(action)
+        states=states.at[:,i].set(state.obs)
+        actions=actions.at[:,i].set(action)
         state = next_state
 
-    return states, actions, total_reward
+    return states, actions
+
+# @jax.jit
+def generate_trajectory_parallel(environment, train_state: TrainState, trajectory_length: int, num_samples, prng_keys: PRNGKey):
+    #@jax.jit
+    def step_trajectory(state, _):
+        action = train_state.policy_model.apply(train_state.policy_params, state.obs)
+        next_state = environment.step(state, action)
+        return next_state, (next_state.obs, action)
+
+    state: State = environment.reset(prng_keys)
+    _, (updatedstates, updatedactions) = jax.lax.scan(step_trajectory, state, xs=None, length=trajectory_length)
+
+    states=jax.numpy.reshape(updatedstates, (num_samples, trajectory_length, environment.observation_size))
+    actions=jax.numpy.reshape(updatedactions, (num_samples, trajectory_length, environment.action_size))
+    return states, actions
+
+
 
 
 #@jax.jit
-def fo_update_action_sequence(environment, states, actions, prng_key, alpha_a):
+#Input: 
+#Envstep:  Enviroment.step : Callable
+#Envreset: Enviroment.reset: Callable
+#actions:  Actions: jax.Array 
+#prng_key: Idk
+#alpha_a: factor
 
-    # print(states)
-    # print(actions)
-    # print(prng_key)
-    
-    def total_reward(environment, states, actions):
-        total_reward = jnp.zeros(1)
-        state = environment.reset(prng_key)
+#functionalized :)
+def fo_update_action_sequence(environment, actions, prng_key, alpha_a):
 
-        for i in range(states.shape[0]):
-            action = actions[i]
-            next_state = environment.step(state, action)
-            total_reward += next_state.reward
-            state = next_state
-        return jnp.reshape(total_reward, ())
-    
-    grad = jax.grad(fun=total_reward, argnums=2)(environment, states, actions)
-    #print(grad)
+    def total_reward(environment, actions, prng_key):
+        
+        def reward_step(states, action):
+            return environment.step(states, action), states.reward
+
+        initial_states = environment.reset(prng_key)
+        _, rewards = jax.lax.scan(f=reward_step, init=initial_states, xs=actions)
+        return jnp.sum(rewards, axis=1)
+
+    grad = jax.grad(fun=total_reward, argnums=1)(environment, actions, prng_key)
     improved_action_sequence = actions + alpha_a * grad
     return improved_action_sequence
 
@@ -82,16 +101,6 @@ def update_policy(states, actions, train_state):
         train_state = train_state.replace(policy_params=new_params)
 
     return train_state
-
-def progress_f(x_data,y_data,epoch,reward):
-    x_data.append(epoch)
-    y_data.append(reward)
-    clear_output(wait=True)
-    plt.xlabel('epoch')
-    plt.ylabel('total reward')
-    plt.plot(x_data, y_data)
-    plt.show()
-
 
 def train(
     environment,
@@ -122,8 +131,9 @@ def train(
         optimizer_state=optimizer_state,
         optimizer=optimizer)
     
-    if progress_fn is None:
-        progress_fn = progress_f
+    # Wrap the environment to allow vmapping
+    environment = envs.training.wrap(environment, episode_length=trajectory_length,)
+    
     
     # 1. run m episodes of the environment using the policy, of length trajectory_length
     # 2. collect the states and actions encountered in each episode
@@ -133,26 +143,24 @@ def train(
     # 6. update the array of actions
     # 7. perform supervised learning on the policy using the array of actions
     x_data,y_data = [],[]
-    
-    for epoch in range(epochs):
-        trajectories = dict()
+
+
+    for _ in range(epochs):
         # 1 - 3
         
-        for i in range(num_samples):
-            new_key2, subkey2 = jax.random.split(new_key)
-            new_key = new_key2
+        # update rng keys
+        key1, key2 = jax.random.split(new_key)
+        new_key = key1
+        subkeys = jax.random.split(key2, num_samples)
 
-            states, actions, total_reward = generate_trajectory(environment, train_state, trajectory_length, subkey2)
-            trajectories[i] = (states, actions, subkey2)
-
-            print("sample:",i,"out of ",num_samples,"total reward:",total_reward,"epoch:",epoch)
+        print(f"Num samples hausif: {num_samples}")
+        trajectories = generate_trajectory_parallel(environment, train_state, trajectory_length, num_samples, subkeys)
+        print(trajectories)
         
-        progress_fn(x_data,y_data, epoch, total_reward)
+        
+        
         # 4 - 6, first order update
-        updated_trajectories = jax.tree_util.tree_map(lambda states_actions_initialkey: 
-                               (states_actions_initialkey[0], 
-                                fo_update_action_sequence(environment, states_actions_initialkey[0], states_actions_initialkey[1], states_actions_initialkey[2], alpha_a)), 
-                                trajectories, is_leaf=lambda x: isinstance(x, tuple) and len(x) == 3)
+        
         
             
         # 7
