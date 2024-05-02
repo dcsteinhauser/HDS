@@ -42,18 +42,18 @@ class State(base.Base):
 
 class InvertedPendulum(PipelineEnv):
 
-  def __init__(self, backend='generalized', **kwargs):
+  def __init__(self, backend='generalized',target = None, **kwargs):
     path = epath.resource_path('brax') / 'envs/assets/inverted_pendulum.xml'
     sys = mjcf.load(path)
 
     n_frames = 2
 
+    self.target = target
     if backend in ['spring', 'positional']:
       sys = sys.replace(dt=0.005)
       n_frames = 4
     
-    if kwargs.get('target') is None:
-      self.target = None
+    
 
     kwargs['n_frames'] = kwargs.get('n_frames', n_frames)
     super().__init__(sys=sys, backend=backend, **kwargs)
