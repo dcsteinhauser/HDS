@@ -78,8 +78,9 @@ class InvertedPendulum(PipelineEnv):
     pipeline_state = self.pipeline_step(state.pipeline_state, action)
     obs = self._get_obs(pipeline_state)
     target= state.target
-    wp,wx,wv,wa = 1,1,1,1
-    reward = -wp*(obs[1])**2 - wx*(jp.cos(obs[0])**2 + (obs[0]-target + jp.sin(obs[1]))**2) - wa*(action)**2 - wv*(obs[2]**2 + obs[3]**2)
+    wp,wx,wv,wa = 0,5,50,.05
+   # - wx*(jp.cos(obs[0])**2 + (obs[0]-target + jp.sin(obs[1]))**2)
+    reward = -wp*(obs[1])**2 - wa*(action)**2 - wv*(obs[2]**2 + obs[3]**2)
     reward =jp.array(reward[0],float)
     done = jp.where(jp.abs(obs[1]) > 0.2, 1.0, 0.0)
     return state.replace(
