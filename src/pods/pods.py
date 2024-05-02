@@ -175,7 +175,7 @@ def train(
         trajectories = generate_trajectory_parallel(environment, train_state, trajectory_length, num_samples, subkeys)
         totalreward=trajectories[2]
         trajectories=trajectories[:2]
-        print(trajectories[0])
+        #print(trajectories[0])
 
 
         print("Total Reward",jnp.mean(totalreward))
@@ -187,7 +187,7 @@ def train(
         for j in range(epochs//3):
             for state_sequence, action_sequence in zip(states, actions):
                 value,train_state= update_policy(state_sequence, action_sequence, train_state)
-            print("big epoch:",i,"small epoch:",j,"Loss",value)
+            #print("big epoch:",i,"small epoch:",j,"Loss",value)
             if(value<1e-4 or value == jnp.nan):
                 break
        
