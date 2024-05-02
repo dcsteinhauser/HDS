@@ -160,7 +160,7 @@ def train(
         states, actions = trajectories[0], fo_update_action_sequence(non_batched_env, trajectories[1], subkeys, alpha_a)
         
         # supervised learning
-        for j in range(epochs//3):
+        for j in range(20):
             for state_sequence, action_sequence in zip(states, actions):
                 value,train_state= update_policy(state_sequence, action_sequence, train_state)
             print("big epoch:",i,"small epoch:",j,"Loss",value)
