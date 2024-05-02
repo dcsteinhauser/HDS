@@ -139,7 +139,7 @@ def train(
     #optimizer = optax.adam(learning_rate=1e-4)
 
     scheduler = optax.exponential_decay(
-    init_value=1e-5,
+    init_value=1e-4,
     transition_steps=1000,
     decay_rate=0.99)
     # Combining gradient transforms using `optax.chain`.
@@ -187,14 +187,16 @@ def train(
         #print("Total Reward",jnp.mean(totalreward))
         # updatedaction sequence
         states, actions = trajectories[0], fo_update_action_sequence(non_batched_env, trajectories[1], subkeys, alpha_a)
-    
+        print("halllooooooo")
         progress_fn(x_data,y_data,i,jnp.mean(totalreward))
+
         # supervised learning
         for j in range(10):
             for state_sequence, action_sequence in zip(states, actions):
                 value,train_state= update_policy(state_sequence, action_sequence, train_state)
             #print("big epoch:",i,"small epoch:",j,"Loss",value)
             if(value<1e-5 or value == jnp.nan):
+                print("OH NEINNNNNNNN")
                 break
        
         

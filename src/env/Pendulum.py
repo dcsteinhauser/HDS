@@ -100,6 +100,8 @@ class InvertedPendulum(PipelineEnv):
   @partial(jax.jit, static_argnums=(0,))
   def step(self, state: State, action: jax.Array) -> State:
     """Run one timestep of the environment's dynamics."""
+    
+    
     pipeline_state = self.pipeline_step(state.pipeline_state, action)
     obs = self._get_obs(pipeline_state)
     target= state.target
@@ -107,11 +109,11 @@ class InvertedPendulum(PipelineEnv):
     wp,wx = state.wp,state.wx
 
     #reward = -wx*(state.distancex **2 + state.distancey **2) -wp*(jp.abs(obs[1])-jp.pi)**2 - wa*(action)**2 - wvel*(obs[2]**2)  -wang*(obs[3]**2)
-    reward = -wx*(state.distancex **2) - wa * (action)**2
+    reward = -wx*(obs[0])**2 - wa *(action)**2 -wx*(obs[1])**2
     reward =jp.array(reward[0],float)
     
     def negativerew(reward):
-      reward += -jp.inf
+      reward = -1000.0
       return reward
     
     def rew(reward):
@@ -119,6 +121,7 @@ class InvertedPendulum(PipelineEnv):
     
     reward=jax.lax.cond(state.done==1,negativerew,rew,reward)
     done = jp.where(jp.abs(obs[0]) > 1.0, 1.0, 0.0)
+
     return state.replace(
         pipeline_state=pipeline_state, obs=obs, reward=reward, done=done
     )
