@@ -127,7 +127,7 @@ def train(
     # get a random key
     key = jax.random.PRNGKey(0)
     new_key, subkey = jax.random.split(key)
-
+    
     # Define the policy and initialize it
     observation_size = int(env.observation_size)
     action_size = int(env.action_size)
@@ -144,7 +144,7 @@ def train(
     decay_rate=0.99)
     # Combining gradient transforms using `optax.chain`.
     optimizer = optax.chain(
-    optax.clip_by_global_norm(1.0),  # Clip by the gradient by the global norm.
+    #optax.clip_by_global_norm(1.0),  # Clip by the gradient by the global norm.
     optax.scale_by_adam(),  # Use the updates from adam.
     optax.scale_by_schedule(scheduler),  # Use the learning rate from the scheduler.
     # Scale updates by -1 since optax.apply_updates is additive and we want to descend on the loss.
