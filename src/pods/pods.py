@@ -90,7 +90,6 @@ def fo_update_action_sequence(environment, actions, prng_key, alpha_a):
     print("loss")
     print(loss)
     return loss"""
-
 def update_policy(states, actions, train_state):
     params = train_state.policy_params
     policy_model = train_state.policy_model
@@ -175,16 +174,16 @@ def train(
         trajectories = generate_trajectory_parallel(environment, train_state, trajectory_length, num_samples, subkeys)
         totalreward=trajectories[2]
         trajectories=trajectories[:2]
-        print(trajectories[0])
+        #print(trajectories[0])
 
 
-        print("Total Reward",jnp.mean(totalreward))
+        #print("Total Reward",jnp.mean(totalreward))
         # updatedaction sequence
         states, actions = trajectories[0], fo_update_action_sequence(non_batched_env, trajectories[1], subkeys, alpha_a)
-        
+    
         progress_fn(x_data,y_data,i,jnp.mean(totalreward))
         # supervised learning
-        for j in range(epochs//3):
+        for j in range(20):
             for state_sequence, action_sequence in zip(states, actions):
                 value,train_state= update_policy(state_sequence, action_sequence, train_state)
             print("big epoch:",i,"small epoch:",j,"Loss",value)
