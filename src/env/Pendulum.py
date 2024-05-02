@@ -42,8 +42,8 @@ class State(base.Base):
 
 class InvertedPendulum(PipelineEnv):
 
-  def __init__(self, backend='generalized',target = None, **kwargs):
-    path = epath.resource_path('brax') / 'envs/assets/inverted_pendulum.xml'
+  def __init__(self, backend='generalized', **kwargs):
+    path = 'src/env/inverted_pendulum.xml'
     sys = mjcf.load(path)
 
     n_frames = 2
@@ -102,12 +102,20 @@ class InvertedPendulum(PipelineEnv):
     """Run one timestep of the environment's dynamics."""
     pipeline_state = self.pipeline_step(state.pipeline_state, action)
     obs = self._get_obs(pipeline_state)
-    wv,wa = 5,5
-    wx,wp = state.wx,state.wp
-    #print(wx,wp)
-    reward = -wx*(state.distancex **2 + state.distancey **2) -wp*(obs[1])**2 - wa*(action)**2 - wv*(obs[2]**2 + obs[3]**2)
-    
+    target= state.target
+    wp,wx,wv,wa = 5,5,5,5
+   # - wx*(jp.cos(obs[0])**2 + (obs[0]-target + jp.sin(obs[1]))**2)
+    reward = -wp*(obs[1])**2 - wa*(action)**2 - wv*(obs[2]**2 + obs[3]**2)
     reward =jp.array(reward[0],float)
+    
+    def negativerew(reward):
+      reward += -jp.inf
+      return reward
+    
+    def rew(reward):
+      return reward
+    
+    reward=jax.lax.cond(state.done==1,negativerew,rew,reward)
     done = jp.where(jp.abs(obs[1]) > 0.2, 1.0, 0.0)
     return state.replace(
         pipeline_state=pipeline_state, obs=obs, reward=reward, done=done

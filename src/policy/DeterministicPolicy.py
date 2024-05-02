@@ -9,17 +9,17 @@ class DeterministicPolicy(nn.Module):
     def setup(self):
         self.dense1 = nn.Dense(32)
         self.dense2 = nn.Dense(64)
-        self.dense3 = nn.Dense(10)
-        self.dense4 = nn.Dense(self.action_size)
+        self.dense5 = nn.Dense(10)
+        self.dense6 = nn.Dense(self.action_size)
 
     def __call__(self, x):
         x = self.dense1(x)
-        x = jax.nn.tanh(x)
+        x = jax.nn.relu(x)
         x = self.dense2(x)
+        x = jax.nn.relu(x)
+        x = self.dense5(x)
         x = jax.nn.tanh(x)
-        x = self.dense3(x)
-        x = jax.nn.tanh(x)
-        x = self.dense4(x)
+        x = self.dense6(x)
         x = jax.nn.tanh(x)
         return x
 
