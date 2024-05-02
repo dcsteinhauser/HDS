@@ -107,6 +107,13 @@ def update_policy(states, actions, train_state):
     return value, train_state
 
 
+def make_policy(network, params):
+
+    def policy(obs):
+        return network.apply(params, obs)
+    
+    return policy
+
 
 
 def train(
@@ -183,7 +190,7 @@ def train(
     
         progress_fn(x_data,y_data,i,jnp.mean(totalreward))
         # supervised learning
-        for j in range(20):
+        for j in range(10):
             for state_sequence, action_sequence in zip(states, actions):
                 value,train_state= update_policy(state_sequence, action_sequence, train_state)
             print("big epoch:",i,"small epoch:",j,"Loss",value)
@@ -195,6 +202,7 @@ def train(
             params = serialization.to_state_dict(train_state.policy_params)
             with open("params.pkl", "wb") as f:
                 pickle.dump(params, f)
-    return functools.partial(train_state.policy_model.apply, variables=train_state.policy_params)
+    
+    return functools.partial(make_policy, params=train_state.policy_params, network=train_state.policy_model)
 
             
