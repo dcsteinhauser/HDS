@@ -42,7 +42,7 @@ class State(base.Base):
 
 class InvertedPendulum(PipelineEnv):
 
-  def __init__(self, backend='generalized', **kwargs):
+  def __init__(self, backend='generalized',target = jp.array([0]), **kwargs):
     path = 'src/env/inverted_pendulum.xml'
     sys = mjcf.load(path)
 
@@ -81,7 +81,7 @@ class InvertedPendulum(PipelineEnv):
     def f2():
       distancex = jp.array(obs[0], float)
       distancey = jp.array(1-jp.cos(obs[1]), float)
-      wx,wp = 5,5
+      wx,wp = 100,2
       return distancex,distancey,wx,wp
 
 
@@ -103,9 +103,11 @@ class InvertedPendulum(PipelineEnv):
     pipeline_state = self.pipeline_step(state.pipeline_state, action)
     obs = self._get_obs(pipeline_state)
     target= state.target
-    wp,wx,wv,wa = 5,5,5,5
-   # - wx*(jp.cos(obs[0])**2 + (obs[0]-target + jp.sin(obs[1]))**2)
-    reward = -wp*(obs[1])**2 - wa*(action)**2 - wv*(obs[2]**2 + obs[3]**2)
+    wa,wvel,wang=10,100,1
+    wp,wx = state.wp,state.wx
+
+    #reward = -wx*(state.distancex **2 + state.distancey **2) -wp*(jp.abs(obs[1])-jp.pi)**2 - wa*(action)**2 - wvel*(obs[2]**2)  -wang*(obs[3]**2)
+    reward = -wx*(state.distancex **2) - wa * (action)**2
     reward =jp.array(reward[0],float)
     
     def negativerew(reward):
@@ -116,7 +118,7 @@ class InvertedPendulum(PipelineEnv):
       return reward
     
     reward=jax.lax.cond(state.done==1,negativerew,rew,reward)
-    done = jp.where(jp.abs(obs[1]) > 0.2, 1.0, 0.0)
+    done = jp.where(jp.abs(obs[0]) > 1.0, 1.0, 0.0)
     return state.replace(
         pipeline_state=pipeline_state, obs=obs, reward=reward, done=done
     )

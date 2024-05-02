@@ -194,14 +194,11 @@ def train(
             for state_sequence, action_sequence in zip(states, actions):
                 value,train_state= update_policy(state_sequence, action_sequence, train_state)
             #print("big epoch:",i,"small epoch:",j,"Loss",value)
-            if(value<1e-4 or value == jnp.nan):
+            if(value<1e-5 or value == jnp.nan):
                 break
        
         
-        if i % 10 == 0:    
-            params = serialization.to_state_dict(train_state.policy_params)
-            with open("params.pkl", "wb") as f:
-                pickle.dump(params, f)
+        
     
     return functools.partial(make_policy, params=train_state.policy_params, network=train_state.policy_model)
 
