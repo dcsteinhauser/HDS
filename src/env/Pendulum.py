@@ -39,7 +39,7 @@ class State(base.Base):
 class InvertedPendulum(PipelineEnv):
 
   def __init__(self, backend='generalized', **kwargs):
-    path = epath.resource_path('brax') / 'envs/assets/inverted_pendulum.xml'
+    path = 'src/env/inverted_pendulum.xml'
     sys = mjcf.load(path)
 
     n_frames = 2
@@ -80,7 +80,7 @@ class InvertedPendulum(PipelineEnv):
     target= state.target
     wp,wx,wv,wa = 10,5,50,.05
    # - wx*(jp.cos(obs[0])**2 + (obs[0]-target + jp.sin(obs[1]))**2)
-    reward = -wp*(obs[0])**8 - wa*(action)**8 - wv*(obs[2]**8 + obs[3]**8)
+    reward = -wp*(obs[0])**8 - wa*(action)**8 - wv*(obs[2]**8 + obs[3]**8) -wx*(obs[1]**8)
     reward =jp.array(reward[0],float)
     
     def negativerew(reward):
