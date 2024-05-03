@@ -31,6 +31,10 @@ class State(base.Base):
   reward: jax.Array
   done: jax.Array
   target: jax.Array
+  distancex: jax.Array
+  distancey: jax.Array
+  wx: jax.Array
+  wp: jax.Array
   metrics: Dict[str, jax.Array] = struct.field(default_factory=dict)
   info: Dict[str, Any] = struct.field(default_factory=dict)
   
@@ -38,21 +42,23 @@ class State(base.Base):
 
 class InvertedPendulum(PipelineEnv):
 
-  def __init__(self, backend='generalized', **kwargs):
-    path = epath.resource_path('brax') / 'envs/assets/inverted_pendulum.xml'
+  def __init__(self, backend='generalized',target = jp.array([0]), **kwargs):
+    path = 'src/env/inverted_pendulum.xml'
     sys = mjcf.load(path)
 
     n_frames = 2
 
+    self.target = target
     if backend in ['spring', 'positional']:
       sys = sys.replace(dt=0.005)
       n_frames = 4
+    
+    
 
     kwargs['n_frames'] = kwargs.get('n_frames', n_frames)
     super().__init__(sys=sys, backend=backend, **kwargs)
   
   @partial(jax.jit, static_argnums=(0,))
-  #@vmap
   def reset(self, rng: jax.Array) -> State:
     """Resets the environment to an initial state."""
     rng, rng1, rng2, rng3 = jax.random.split(rng,4)
@@ -65,24 +71,57 @@ class InvertedPendulum(PipelineEnv):
     )
     pipeline_state = self.pipeline_init(q, qd)
     obs = self._get_obs(pipeline_state)
-    target = jax.random.uniform(rng3, (1,), minval=-10, maxval=10)
+
+    def f1():
+      distancex = jp.array(0, float)
+      distancey = jp.array(1+jp.cos(obs[1]), float)
+      wx,wp = 0,0
+      return distancex,distancey,wx,wp
+
+    def f2():
+      distancex = jp.array(obs[0], float)
+      distancey = jp.array(1-jp.cos(obs[1]), float)
+      wx,wp = 100,2
+      return distancex,distancey,wx,wp
+
+
+    if self.target is not None:
+      target = self.target
+    else:
+      target = jax.random.bits(rng3, shape=(1,))%2
+
+    
+    distancex,distancey,wx,wp = jax.lax.cond(target[0] == 0, f1, f2)
     reward, done = jp.zeros(2)
     metrics = {}
 
-    return State(pipeline_state, obs, reward, done,target, metrics)
+    return State(pipeline_state, obs, reward, done,target,distancex,distancey, wx,wp, metrics)
   
   @partial(jax.jit, static_argnums=(0,))
-  #@vmap
   def step(self, state: State, action: jax.Array) -> State:
     """Run one timestep of the environment's dynamics."""
+    
+    
     pipeline_state = self.pipeline_step(state.pipeline_state, action)
     obs = self._get_obs(pipeline_state)
     target= state.target
-    wp,wx,wv,wa = 0,5,50,.05
-   # - wx*(jp.cos(obs[0])**2 + (obs[0]-target + jp.sin(obs[1]))**2)
-    reward = -wp*(obs[1])**2 - wa*(action)**2 - wv*(obs[2]**2 + obs[3]**2)
+    wa,wvel,wang=10,100,1
+    wp,wx = state.wp,state.wx
+
+    #reward = -wx*(state.distancex **2 + state.distancey **2) -wp*(jp.abs(obs[1])-jp.pi)**2 - wa*(action)**2 - wvel*(obs[2]**2)  -wang*(obs[3]**2)
+    reward = -wx*(obs[0])**2 - wa *(action)**2 -wx*(obs[1])**2
     reward =jp.array(reward[0],float)
-    done = jp.where(jp.abs(obs[1]) > 0.2, 1.0, 0.0)
+    
+    def negativerew(reward):
+      reward = 0.0
+      return reward
+    
+    def rew(reward):
+      return reward
+    
+    reward=jax.lax.cond(state.done==1,negativerew,rew,reward)
+    done = jp.where(jp.abs(obs[0]) > 1.0, 1.0, 0.0)
+
     return state.replace(
         pipeline_state=pipeline_state, obs=obs, reward=reward, done=done
     )

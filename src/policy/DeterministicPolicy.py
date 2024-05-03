@@ -9,7 +9,6 @@ class DeterministicPolicy(nn.Module):
     def setup(self):
         self.dense1 = nn.Dense(32)
         self.dense2 = nn.Dense(64)
-
         self.dense5 = nn.Dense(10)
         self.dense6 = nn.Dense(self.action_size)
 
