@@ -15,7 +15,7 @@ class StochasticPolicy(nn.Module):
         self.dense5 = nn.Dense(10)
         self.dense6 = nn.Dense(self.action_size*2)
 
-    def __call__(self, x,rng_key):
+    def __call__(self, x,rng_key=None, training=True):
         x = self.dense1(x)
         x = jax.nn.relu(x)
         x = self.dense2(x)
@@ -25,6 +25,10 @@ class StochasticPolicy(nn.Module):
         x = self.dense6(x)
 
         mean, logvar = jnp.split(x, 2, axis=-1)
+
+        if not training:
+            return mean
+
         std = jnp.exp(0.5 * logvar)
         eps = random.normal(rng_key, mean.shape)
         x = mean + std * eps

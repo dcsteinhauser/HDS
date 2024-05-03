@@ -76,20 +76,31 @@ def fo_update_action_sequence(environment, actions, prng_key, alpha_a):
     return improved_action_sequence
 
 
+
+
 def update_policy(states, actions, train_state, rng_key):
     params = train_state.policy_params
     policy_model = train_state.policy_model
     optimizer_state = train_state.optimizer_state
     optimizer = train_state.optimizer
     
-    policy_output_fn = partial(policy_model.apply, rng_key=rng_key)
-    loss_fn = lambda params, states, actions: 0.5*optax.losses.squared_error(policy_output_fn(params,states), actions).mean()
-    value,grad = jax.value_and_grad(loss_fn)(params, states, actions)
+    def loss_fn(params, states, actions, rng_key):
+        model_output = policy_model.apply(params, states, rng_key)
+        return 0.5*optax.losses.squared_error(model_output, actions).mean() + 0.05*jnp.square(model_output).mean()
+
+    value,grad = jax.value_and_grad(loss_fn)(params, states, actions, rng_key)
     updates, optimizer_state = optimizer.update(grad, optimizer_state)
     new_params = optax.apply_updates(params, updates)
     train_state = train_state.replace(policy_params=new_params, optimizer_state=optimizer_state)
 
     return value, train_state
+
+def make_policy(network, params):
+
+    def policy(obs):
+        return network.apply(params, obs, training=False)
+    
+    return policy
 
 def train(
     env,
@@ -178,6 +189,6 @@ def train(
             with open("params.pkl", "wb") as f:
                 pickle.dump(params, f)
 
-    return functools.partial(train_state.policy_model.apply, variables=train_state.policy_params)
+    return functools.partial(make_policy, params=train_state.policy_params, network=train_state.policy_model)
 
             
