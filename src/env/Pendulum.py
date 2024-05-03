@@ -113,7 +113,7 @@ class InvertedPendulum(PipelineEnv):
     reward =jp.array(reward[0],float)
     
     def negativerew(reward):
-      reward = -1000.0
+      reward = 0.0
       return reward
     
     def rew(reward):
