@@ -72,7 +72,7 @@ def generate_trajectory_parallel(environment, train_state: TrainState, trajector
     states=jax.numpy.reshape(states, (trajectory_length, environment.observation_size))
     actions=jax.numpy.reshape(actions, (trajectory_length, environment.action_size))
 
-    average_reward=jnp.mean(rewards_future, axis=0)
+    average_reward=jnp.mean(rewards_future)
 
     return states, actions, average_reward
 
@@ -118,17 +118,17 @@ def fo_update_action_sequence(environment, actions, prng_key, alpha_a):
 
 
 
-def update_policy(states, actions, train_state, rng_key):
+def update_policy(states, actions, train_state, rng_key, lamda_reg=0.05):
     params = train_state.policy_params
     policy_model = train_state.policy_model
     optimizer_state = train_state.optimizer_state
     optimizer = train_state.optimizer
     
-    def loss_fn(params, states, actions, rng_key):
+    def loss_fn(params, states, actions, rng_key, lambda_reg=0.05):
         model_output = policy_model.apply(params, states, rng_key)
-        return 0.5*optax.losses.squared_error(model_output, actions).mean() + 0.05*jnp.square(model_output).mean()
+        return 0.5*optax.losses.squared_error(model_output, actions).mean() + lambda_reg*jnp.square(model_output).mean()
 
-    value,grad = jax.value_and_grad(loss_fn)(params, states, actions, rng_key)
+    value,grad = jax.value_and_grad(loss_fn)(params, states, actions, rng_key, lambda_reg=lamda_reg)
     updates, optimizer_state = optimizer.update(grad, optimizer_state)
     new_params = optax.apply_updates(params, updates)
     train_state = train_state.replace(policy_params=new_params, optimizer_state=optimizer_state)
@@ -150,6 +150,7 @@ def train(
     inner_epochs: int,
     alpha_a: float,
     init_learning_rate: float,
+    lambda_policy_update=0.05,
     progress_fn=None):
 
     # get a random key
@@ -211,11 +212,11 @@ def train(
         
         # generate trajectories
         trajectories = generate_trajectory_parallel(non_batched_env, train_state, trajectory_length, subkeys)
-        total_reward = trajectories[2]
+        average_reward = trajectories[2]
         trajectories = trajectories[:2]
         
         # output progress
-        progress_fn(x_data,y_data,i,jnp.mean(total_reward))
+        progress_fn(x_data,y_data,i,jnp.mean(average_reward))
         
         # update action sequence
         states, actions = trajectories[0], fo_update_action_sequence(non_batched_env, trajectories[1], subkeys, alpha_a)
@@ -223,7 +224,7 @@ def train(
         # supervised learning
         for j in range(inner_epochs):
             for state_sequence, action_sequence in zip(states, actions):
-                value,train_state= update_policy(state_sequence, action_sequence, train_state, key3)
+                value,train_state= update_policy(state_sequence, action_sequence, train_state, key3, lambda_policy_update)
                 key4, key5 = jax.random.split(key3)
                 key3 = key4
             print("big epoch:",i,"small epoch:",j,"Loss",value)

@@ -25,6 +25,7 @@ class StochasticPolicy(nn.Module):
         x = self.dense6(x)
 
         mean, logvar = jnp.split(x, 2, axis=-1)
+        logvar = jax.nn.sigmoid(logvar)
 
         if not training:
             return mean
