@@ -42,16 +42,20 @@ def generate_trajectory(environment, train_state: TrainState, trajectory_length:
 
 def generate_trajectory_parallel(environment, train_state: TrainState, trajectory_length: int, num_samples: int, prng_keys: PRNGKey):
 
-    def step_trajectory(state, _):
-        action = train_state.policy_model.apply(train_state.policy_params, state.obs)
-        next_state = environment.step(state, action)
-        return next_state, (next_state.obs, action,next_state.reward)
+    def step_trajectory(state_carry, _):
+        action = train_state.policy_model.apply(train_state.policy_params, state_carry.obs)
+        next_state = environment.step(state_carry, action)
+        return next_state, (state_carry.obs, action, next_state.reward)
 
     state: State = environment.reset(prng_keys)
-    _, (updatedstates, updatedactions,reward) = jax.lax.scan(step_trajectory, state, xs=None, length=trajectory_length)
-    states=jax.numpy.reshape(updatedstates, (num_samples, trajectory_length, environment.observation_size))
-    actions=jax.numpy.reshape(updatedactions, (num_samples, trajectory_length, environment.action_size))
-    totalreward=jnp.sum(reward, axis=0)
+    _, (states, actions,rewards_future) = jax.lax.scan(step_trajectory, state, xs=None, length=trajectory_length)
+    
+    states = jax.numpy.reshape(states, (num_samples, trajectory_length, environment.observation_size))
+    actions=jax.numpy.reshape(actions, (num_samples, trajectory_length, environment.action_size))
+    
+    rewards_future = jax.numpy.reshape(rewards_future, (num_samples, trajectory_length))
+    totalreward=jnp.sum(rewards_future , axis=1)
+
     return states, actions, totalreward
 
 
@@ -167,16 +171,18 @@ def train(
         
         # update action sequence
         states, actions = trajectories[0], fo_update_action_sequence(non_batched_env, trajectories[1], subkeys, alpha_a)
-        print("halllooooooo")
-        progress_fn(x_data,y_data,i,jnp.mean(totalreward))
+        #states, actions = trajectories[0], trajectories[1]
+        # print("halllooooooo")
+        # progress_fn(x_data,y_data,i,jnp.mean(totalreward))
 
         # supervised learning
-        for j in range(10):
+        for j in range(20):
             for state_sequence, action_sequence in zip(states, actions):
                 value,train_state= update_policy(state_sequence, action_sequence, train_state)
-            #print("big epoch:",i,"small epoch:",j,"Loss",value)
+            
+            print("big epoch:",i,"small epoch:",j,"Loss",value)
             if(value<1e-5 or value == jnp.nan):
-                print("OH NEINNNNNNNN")
+                # print("OH NEINNNNNNNN")
                 break
        
         

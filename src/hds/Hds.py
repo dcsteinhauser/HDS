@@ -41,7 +41,7 @@ def generate_trajectory(environment, train_state: TrainState, trajectory_length:
     return states, actions
 
 
-def generate_trajectory_parallel(environment, train_state: TrainState, trajectory_length: int, num_samples: int, prng_keys: PRNGKey):
+def generate_trajectory_parallel_backup(environment, train_state: TrainState, trajectory_length: int, num_samples: int, prng_keys: PRNGKey):
 
     def step_trajectory(state, rng_key):
         action = train_state.policy_model.apply(train_state.policy_params, state.obs, rng_key)
@@ -54,8 +54,30 @@ def generate_trajectory_parallel(environment, train_state: TrainState, trajector
     _, (updatedstates, updatedactions,reward) = jax.vmap(jax.lax.scan, in_axes=(None,0))(step_trajectory, state, xs=keys)
     states=jax.numpy.reshape(updatedstates, (num_samples, trajectory_length, environment.observation_size))
     actions=jax.numpy.reshape(updatedactions, (num_samples, trajectory_length, environment.action_size))
-    totalreward=jnp.sum(reward, axis=0)
+    totalreward=jnp.mean(reward, axis=0)
     return states, actions, totalreward
+
+def generate_trajectory_parallel(environment, train_state: TrainState, trajectory_length: int, num_samples: int, prng_keys: PRNGKey):
+
+    def step_trajectory(state_carry, rng_key):
+        action = train_state.policy_model.apply(train_state.policy_params, state.obs, rng_key)
+        next_state = environment.step(state_carry, action)
+        return next_state, (state_carry.obs, action, next_state.reward)
+
+    state: State = jax.vmap(environment.reset)(prng_keys)
+
+    keys = jax.vmap(jax.random.split, in_axes=(0,None))(prng_keys, trajectory_length)
+
+    _, (states, actions, rewards_future) = jax.vmap(jax.lax.scan, in_axes=(None,0))(step_trajectory, state, xs=keys)
+
+    states=jax.numpy.reshape(states, (num_samples, trajectory_length, environment.observation_size))
+    actions=jax.numpy.reshape(actions, (num_samples, trajectory_length, environment.action_size))
+    rewards_future = jax.numpy.reshape(rewards_future, (num_samples, trajectory_length))
+
+    totalreward=jnp.mean(rewards_future, axis=0)
+    return states, actions, totalreward
+
+
 
 
 @partial(jax.vmap,in_axes=(None,0,0,None),out_axes=0,axis_name="batch")
@@ -107,7 +129,9 @@ def train(
     trajectory_length: int,
     num_samples: int,
     epochs: int,
+    inner_epochs: int,
     alpha_a: float,
+    init_learning_rate: float,
     progress_fn=None):
 
     # get a random key
@@ -123,7 +147,7 @@ def train(
 
     # Define the optimizer
     scheduler = optax.exponential_decay(
-        init_value=1e-5,
+        init_value=init_learning_rate,
         transition_steps=1000,
         decay_rate=0.99)
     
@@ -157,6 +181,11 @@ def train(
     x_data = []
     y_data = []
     for i in range(epochs):
+
+        # gradually increase trajectory length
+        if i > 0 and i % 20 == 0:
+            trajectory_length += 10
+
         # update rng keys
         key1, key2, key3 = jax.random.split(new_key, num=3)
         new_key = key1
@@ -174,7 +203,7 @@ def train(
         states, actions = trajectories[0], fo_update_action_sequence(non_batched_env, trajectories[1], subkeys, alpha_a)
         
         # supervised learning
-        for j in range(20):
+        for j in range(inner_epochs):
             for state_sequence, action_sequence in zip(states, actions):
                 value,train_state= update_policy(state_sequence, action_sequence, train_state, key3)
                 key4, key5 = jax.random.split(key3)

@@ -105,7 +105,7 @@ class InvertedPendulum(PipelineEnv):
     pipeline_state = self.pipeline_step(state.pipeline_state, action)
     obs = self._get_obs(pipeline_state)
     target= state.target
-    wa,wvel,wang=10,100,1
+    wa,wvel,wang=1,100,1
     wp,wx = state.wp,state.wx
 
     #reward = -wx*(state.distancex **2 + state.distancey **2) -wp*(jp.abs(obs[1])-jp.pi)**2 - wa*(action)**2 - wvel*(obs[2]**2)  -wang*(obs[3]**2)
