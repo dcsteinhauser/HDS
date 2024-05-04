@@ -57,24 +57,44 @@ def generate_trajectory_parallel_backup(environment, train_state: TrainState, tr
     totalreward=jnp.mean(reward, axis=0)
     return states, actions, totalreward
 
-def generate_trajectory_parallel(environment, train_state: TrainState, trajectory_length: int, num_samples: int, prng_keys: PRNGKey):
-
+@partial(jax.vmap,in_axes=(None,None,None,None,0),axis_name="batch")
+def generate_trajectory_parallel(environment, train_state: TrainState, trajectory_length: int, prng_keys: PRNGKey):
     def step_trajectory(state_carry, rng_key):
         action = train_state.policy_model.apply(train_state.policy_params, state.obs, rng_key)
         next_state = environment.step(state_carry, action)
         return next_state, (state_carry.obs, action, next_state.reward)
 
-    state: State = jax.vmap(environment.reset)(prng_keys)
+    # state: State = jax.vmap(environment.reset)(prng_keys)
+    state: State = environment.reset(prng_keys)
+    # keys = jax.vmap(jax.random.split, in_axes=(0,None))(prng_keys, trajectory_length)
+    keys = jax.random.split(prng_keys, trajectory_length)
+    # _, (states, actions, rewards_future) = jax.vmap(jax.lax.scan, in_axes=(None,0))(step_trajectory, state, xs=keys)
+    _, (states, actions,rewards_future) = jax.lax.scan(step_trajectory, state, xs=keys)
 
-    keys = jax.vmap(jax.random.split, in_axes=(0,None))(prng_keys, trajectory_length)
-
-    _, (states, actions, rewards_future) = jax.vmap(jax.lax.scan, in_axes=(None,0))(step_trajectory, state, xs=keys)
-
-    states=jax.numpy.reshape(states, (num_samples, trajectory_length, environment.observation_size))
-    actions=jax.numpy.reshape(actions, (num_samples, trajectory_length, environment.action_size))
-    rewards_future = jax.numpy.reshape(rewards_future, (num_samples, trajectory_length))
+    states=jax.numpy.reshape(states, (trajectory_length, environment.observation_size))
+    actions=jax.numpy.reshape(actions, (trajectory_length, environment.action_size))
+    rewards_future = jax.numpy.reshape(rewards_future, (trajectory_length))
 
     totalreward=jnp.mean(rewards_future, axis=0)
+    return states, actions, totalreward
+
+
+def generate_trajectory_parallel32(environment, train_state: TrainState, trajectory_length: int, num_samples: int, prng_keys: PRNGKey):
+
+    def step_trajectory(state_carry, _):
+        action = train_state.policy_model.apply(train_state.policy_params, state_carry.obs)
+        next_state = environment.step(state_carry, action)
+        return next_state, (state_carry.obs, action, next_state.reward)
+
+    state: State = environment.reset(prng_keys)
+    _, (states, actions,rewards_future) = jax.lax.scan(step_trajectory, state, xs=None, length=trajectory_length)
+    
+    states = jax.numpy.reshape(states, (num_samples, trajectory_length, environment.observation_size))
+    actions=jax.numpy.reshape(actions, (num_samples, trajectory_length, environment.action_size))
+    
+    rewards_future = jax.numpy.reshape(rewards_future, (num_samples, trajectory_length))
+    totalreward=jnp.sum(rewards_future , axis=1)
+
     return states, actions, totalreward
 
 
@@ -192,7 +212,7 @@ def train(
         subkeys = jax.random.split(key2, num_samples)
         
         # generate trajectories
-        trajectories = generate_trajectory_parallel(non_batched_env, train_state, trajectory_length, num_samples, subkeys)
+        trajectories = generate_trajectory_parallel(non_batched_env, train_state, trajectory_length, subkeys)
         total_reward = trajectories[2]
         trajectories = trajectories[:2]
         
