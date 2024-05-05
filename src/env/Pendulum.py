@@ -30,18 +30,21 @@ class State(base.Base):
   obs: jax.Array
   reward: jax.Array
   done: jax.Array
+  # supposed target value to get your pendulum to go
   target: jax.Array
   distancex: jax.Array
   distancey: jax.Array
+  #weights for target difference and position (like the apper)
   wx: jax.Array
   wp: jax.Array
+
   metrics: Dict[str, jax.Array] = struct.field(default_factory=dict)
   info: Dict[str, Any] = struct.field(default_factory=dict)
   
 
 
 class InvertedPendulum(PipelineEnv):
-
+  #didnt change from default
   def __init__(self, backend='generalized',target = jp.array([0]), **kwargs):
     path = 'src/env/inverted_pendulum.xml'
     sys = mjcf.load(path)
@@ -71,26 +74,26 @@ class InvertedPendulum(PipelineEnv):
     )
     pipeline_state = self.pipeline_init(q, qd)
     obs = self._get_obs(pipeline_state)
-
+    # configuration if pendulum is just supposed to go to downward position not necessarily origin
     def f1():
       distancex = jp.array(0, float)
       distancey = jp.array(1+jp.cos(obs[1]), float)
       wx,wp = 0,0
       return distancex,distancey,wx,wp
-
+    # config if downward at origin 
     def f2():
       distancex = jp.array(obs[0], float)
       distancey = jp.array(1-jp.cos(obs[1]), float)
-      wx,wp = 100,2
+      wx,wp = 10,2
       return distancex,distancey,wx,wp
 
-
+    #determining target randomly unless otherwise given
     if self.target is not None:
       target = self.target
     else:
       target = jax.random.bits(rng3, shape=(1,))%2
 
-    
+    #if statement, depending pn what the target says
     distancex,distancey,wx,wp = jax.lax.cond(target[0] == 0, f1, f2)
     reward, done = jp.zeros(2)
     metrics = {}
@@ -100,32 +103,57 @@ class InvertedPendulum(PipelineEnv):
   @partial(jax.jit, static_argnums=(0,))
   def step(self, state: State, action: jax.Array) -> State:
     """Run one timestep of the environment's dynamics."""
-    
-    
-    pipeline_state = self.pipeline_step(state.pipeline_state, action)
-    obs = self._get_obs(pipeline_state)
+    #current and next state
+    pipeline_state=state.pipeline_state
+    pipeline_state_next = self.pipeline_step(state.pipeline_state, action)
+    #current and next observations
+    obs_prev = self._get_obs(state.pipeline_state)
+    obs_next = self._get_obs(pipeline_state_next)
+    #target
     target= state.target
-    wa,wvel,wang=1,100,1
-    wp,wx = state.wp,state.wx
+    #reward function weights
+    wa,wvel,wang,wp,wx = 1,1,1,state.wp,state.wx
+    
+    #function in case the sequence is done, sets the next state to current state and applies heavily negative reward
+    def step1(pipeline_state,pipeline_state_next,obs_prev,obs_next,done,wa,wvel,wang,wp,wx):
+      reward = -100000.0
+      reward = jp.array(reward, float)
+      ps1 = pipeline_state
+      obs = obs_prev
+      done=done
+      #print(reward)
+      return ps1,obs,reward,done
+    
+    #normal situation, with check if next state results in done flag
+    def step2(pipeline_state,pipeline_state_next,obs_prev,obs_next,done,wa,wvel,wang,wp,wx):
 
-    #reward = -wx*(state.distancex **2 + state.distancey **2) -wp*(jp.abs(obs[1])-jp.pi)**2 - wa*(action)**2 - wvel*(obs[2]**2)  -wang*(obs[3]**2)
-    reward = -wx*(obs[0])**2 - wa *(action)**2 -wx*(obs[1])**2
-    reward =jp.array(reward[0],float)
-    
-    def negativerew(reward):
-      reward = 0.0
-      return reward
-    
-    def rew(reward):
-      return reward
-    
-    reward=jax.lax.cond(state.done==1,negativerew,rew,reward)
-    done = jp.where(jp.abs(obs[0]) > 1.0, 1.0, 0.0)
+      def rew1(reward):
+        return reward
+      
+      def rew2(reward):
+        return -100000.0
 
+      ps1 = pipeline_state_next
+      obs = obs_next
+      reward = -wx*(obs_next[0])**4
+      done = jp.where(jp.abs(obs[0]) > 9.0, 1.0, 0.0)
+      reward=jax.lax.cond(state.done==1,rew2,rew1,reward)
+      #print(reward)
+
+      return ps1,obs,reward,done
+    
+    done= state.done
+    #update function, if condition basically based on if its done or not
+    pipeline_state_next,obs,reward,done = jax.lax.cond(state.done == 1, step1, step2, pipeline_state,pipeline_state_next,obs_prev,obs_next,state.done,wa,wvel,wang,wp,wx)    
+    reward = jp.array(reward, float)
+    
+    
     return state.replace(
-        pipeline_state=pipeline_state, obs=obs, reward=reward, done=done
+        pipeline_state=pipeline_state_next, obs=obs, reward=reward, done=done
     )
 
+
+#rest here is default
   @property
   def action_size(self):
     return 1
