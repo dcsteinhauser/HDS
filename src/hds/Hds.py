@@ -112,7 +112,7 @@ def fo_update_action_sequence(environment, actions, prng_key, alpha_a):
         return jnp.sum(rewards, axis=0)
     
     grad =  jax.grad(total_reward, argnums=1)(environment, actions, prng_key)
-    grad=jax.numpy.nan_to_num(grad, copy=False, nan=0.0, posinf=1e7, neginf=-1e7)
+    #grad=jax.numpy.nan_to_num(grad, copy=False, nan=0.0, posinf=1e7, neginf=-1e7)
     improved_action_sequence = actions + alpha_a * grad
     return improved_action_sequence
 
