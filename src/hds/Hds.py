@@ -112,6 +112,7 @@ def fo_update_action_sequence(environment, actions, prng_key, alpha_a):
         return jnp.sum(rewards, axis=0)
     
     grad =  jax.grad(total_reward, argnums=1)(environment, actions, prng_key)
+    grad=jax.numpy.nan_to_num(grad, copy=False, nan=0.0, posinf=1e7, neginf=-1e7)
     improved_action_sequence = actions + alpha_a * grad
     return improved_action_sequence
 
@@ -123,7 +124,6 @@ def update_policy(states, actions, train_state, rng_key, lamda_reg=0.05):
     policy_model = train_state.policy_model
     optimizer_state = train_state.optimizer_state
     optimizer = train_state.optimizer
-    
     def loss_fn(params, states, actions, rng_key, lambda_reg=0.05):
         model_output = policy_model.apply(params, states, rng_key)
         return 0.5*optax.losses.squared_error(model_output, actions).mean() + lambda_reg*jnp.square(model_output).mean()
@@ -132,7 +132,6 @@ def update_policy(states, actions, train_state, rng_key, lamda_reg=0.05):
     updates, optimizer_state = optimizer.update(grad, optimizer_state)
     new_params = optax.apply_updates(params, updates)
     train_state = train_state.replace(policy_params=new_params, optimizer_state=optimizer_state)
-
     return value, train_state
 
 def make_policy(network, params):
@@ -214,13 +213,12 @@ def train(
         trajectories = generate_trajectory_parallel(non_batched_env, train_state, trajectory_length, subkeys)
         average_reward = trajectories[2]
         trajectories = trajectories[:2]
-        
         # output progress
         progress_fn(x_data,y_data,i,jnp.mean(average_reward))
         
         # update action sequence
         states, actions = trajectories[0], fo_update_action_sequence(non_batched_env, trajectories[1], subkeys, alpha_a)
-        
+
         # supervised learning
         for j in range(inner_epochs):
             for state_sequence, action_sequence in zip(states, actions):
@@ -228,9 +226,9 @@ def train(
                 key4, key5 = jax.random.split(key3)
                 key3 = key4
             print("big epoch:",i,"small epoch:",j,"Loss",value)
-            if(value<1e-4 or value == jnp.nan):
+            if(value<1e-4):
                 break
-       
+            
        # checkpoint
         if i % 10 == 0:    
             params = serialization.to_state_dict(train_state.policy_params)
