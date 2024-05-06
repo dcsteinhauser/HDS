@@ -143,9 +143,9 @@ def train(
         policy_params=policy_params,
         optimizer_state=optimizer_state,
         optimizer=optimizer)
-    orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
-    options = orbax.checkpoint.CheckpointManagerOptions(max_to_keep=2, create=True)
-    checkpoint_manager = orbax.checkpoint.CheckpointManager('/home/student/Documents/HDS/tmp/flax_ckpt/orbax/managed', orbax_checkpointer, options)
+    # orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
+    # options = orbax.checkpoint.CheckpointManagerOptions(max_to_keep=2, create=True)
+    # checkpoint_manager = orbax.checkpoint.CheckpointManager('/home/student/Documents/HDS/tmp/flax_ckpt/orbax/managed', orbax_checkpointer, options)
 
     
     # Initialize a nonbatched env
@@ -191,9 +191,9 @@ def train(
                 # print("OH NEINNNNNNNN")
                 break
         
-        ckpt = {'model': train_state}
-        save_args = orbax_utils.save_args_from_target(ckpt)
-        checkpoint_manager.save(i, ckpt, save_kwargs={'save_args': save_args})
+        # ckpt = {'model': train_state}
+        # save_args = orbax_utils.save_args_from_target(ckpt)
+        # checkpoint_manager.save(i, ckpt, save_kwargs={'save_args': save_args})
        
            
     

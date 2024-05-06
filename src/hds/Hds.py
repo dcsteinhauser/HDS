@@ -57,11 +57,11 @@ def generate_trajectory_parallel_backup(environment, train_state: TrainState, tr
     totalreward=jnp.mean(reward, axis=0)
     return states, actions, totalreward
 
-@partial(jax.vmap,in_axes=(None,None,None,0),axis_name="batch")
-def generate_trajectory_parallel(environment, train_state: TrainState, trajectory_length: int, prng_keys: PRNGKey):
+@partial(jax.vmap,in_axes=(None,None,None,None,0),axis_name="batch")
+def generate_trajectory_parallel(environment, train_state: TrainState, trajectory_length: int, noise, prng_keys: PRNGKey):
     
     def step_trajectory(state_carry, rng_key):
-        action = train_state.policy_model.apply(train_state.policy_params, state.obs, rng_key)
+        action = train_state.policy_model.apply(train_state.policy_params, state.obs, noise, rng_key)
         next_state = environment.step(state_carry, action)
         return next_state, (state_carry.obs, action, next_state.reward)
 
@@ -77,30 +77,9 @@ def generate_trajectory_parallel(environment, train_state: TrainState, trajector
     return states, actions, average_reward
 
 
-def generate_trajectory_parallel32(environment, train_state: TrainState, trajectory_length: int, num_samples: int, prng_keys: PRNGKey):
-
-    def step_trajectory(state_carry, _):
-        action = train_state.policy_model.apply(train_state.policy_params, state_carry.obs)
-        next_state = environment.step(state_carry, action)
-        return next_state, (state_carry.obs, action, next_state.reward)
-
-    state: State = environment.reset(prng_keys)
-    _, (states, actions,rewards_future) = jax.lax.scan(step_trajectory, state, xs=None, length=trajectory_length)
-    
-    states = jax.numpy.reshape(states, (num_samples, trajectory_length, environment.observation_size))
-    actions=jax.numpy.reshape(actions, (num_samples, trajectory_length, environment.action_size))
-    
-    rewards_future = jax.numpy.reshape(rewards_future, (num_samples, trajectory_length))
-    totalreward=jnp.sum(rewards_future , axis=1)
-
-    return states, actions, totalreward
-
-
-
-
-@partial(jax.vmap,in_axes=(None,0,0,None),out_axes=0,axis_name="batch")
-@partial(jax.jit, static_argnums=(0,))
-def fo_update_action_sequence(environment, actions, prng_key, alpha_a):
+@partial(jax.vmap,in_axes=(None,0,0,None,0),out_axes=0,axis_name="batch")
+@partial(jax.jit, static_argnums=(0,3))
+def fo_update_action_sequence(environment, actions, prng_key, tx, opt_state):
 
     def total_reward(environment, actions, prng_key):
         
@@ -113,26 +92,26 @@ def fo_update_action_sequence(environment, actions, prng_key, alpha_a):
     
     grad =  jax.grad(total_reward, argnums=1)(environment, actions, prng_key)
     #grad=jax.numpy.nan_to_num(grad, copy=False, nan=0.0, posinf=1e7, neginf=-1e7)
-    improved_action_sequence = actions + alpha_a * grad
-    return improved_action_sequence
+    updates, new_opt_state = tx.update(grad, opt_state)
+    new_actions = optax.apply_updates(actions, updates)
+    return new_actions, new_opt_state
 
-
-
-
-def update_policy(states, actions, train_state, rng_key, lamda_reg=0.05):
+# @jax.jit(static_argnums=(2))
+def update_policy(states, actions, train_state, noise, rng_key, lamda_reg=0.05):
     params = train_state.policy_params
     policy_model = train_state.policy_model
     optimizer_state = train_state.optimizer_state
     optimizer = train_state.optimizer
+
     def loss_fn(params, states, actions, rng_key, lambda_reg=0.05):
-        model_output = policy_model.apply(params, states, rng_key)
+        model_output = policy_model.apply(params, states, noise, rng_key)
         return 0.5*optax.losses.squared_error(model_output, actions).mean() + lambda_reg*jnp.square(model_output).mean()
 
     value,grad = jax.value_and_grad(loss_fn)(params, states, actions, rng_key, lambda_reg=lamda_reg)
     updates, optimizer_state = optimizer.update(grad, optimizer_state)
     new_params = optax.apply_updates(params, updates)
-    train_state = train_state.replace(policy_params=new_params, optimizer_state=optimizer_state)
-    return value, train_state
+    new_train_state = train_state.replace(policy_params=new_params, optimizer_state=optimizer_state)
+    return value, new_train_state
 
 def make_policy(network, params):
 
@@ -149,6 +128,8 @@ def train(
     inner_epochs: int,
     alpha_a: float,
     init_learning_rate: float,
+    init_noise = 1.0,
+    noise_decay = 0.99,
     lambda_policy_update=0.05,
     progress_fn=None):
 
@@ -160,8 +141,8 @@ def train(
     observation_size = int(env.observation_size)
     action_size = int(env.action_size)
     policy_model = StochasticPolicy(observation_size=observation_size,action_size= action_size)
-    policy_params = policy_model.init(key, jnp.ones((observation_size,)), subkey)
-    t0= time.time()
+    noise = init_noise
+    policy_params = policy_model.init(key, jnp.ones((observation_size,)), noise, subkey)
 
     # Define the optimizer
     scheduler = optax.exponential_decay(
@@ -171,7 +152,7 @@ def train(
     
     # Combining gradient transforms using `optax.chain`.
     optimizer = optax.chain(
-        optax.clip_by_global_norm(1.0),  # Clip by the gradient by the global norm.
+        # optax.clip_by_global_norm(1.0),  # Clip by the gradient by the global norm.
         optax.scale_by_adam(),  # Use the updates from adam.
         optax.scale_by_schedule(scheduler),  # Use the learning rate from the scheduler.
         # Scale updates by -1 since optax.apply_updates is additive and we want to descend on the loss.
@@ -201,8 +182,8 @@ def train(
     for i in range(epochs):
 
         # gradually increase trajectory length
-        if i > 0 and i % 20 == 0:
-            trajectory_length += 10
+        # if i > 0 and i % 20 == 0:
+        #     trajectory_length += 10
 
         # update rng keys
         key1, key2, key3 = jax.random.split(new_key, num=3)
@@ -210,19 +191,25 @@ def train(
         subkeys = jax.random.split(key2, num_samples)
         
         # generate trajectories
-        trajectories = generate_trajectory_parallel(non_batched_env, train_state, trajectory_length, subkeys)
+        trajectories = generate_trajectory_parallel(non_batched_env, train_state, trajectory_length, noise, subkeys)
         average_reward = trajectories[2]
         trajectories = trajectories[:2]
         # output progress
         progress_fn(x_data,y_data,i,jnp.mean(average_reward))
         
         # update action sequence
-        states, actions = trajectories[0], fo_update_action_sequence(non_batched_env, trajectories[1], subkeys, alpha_a)
+        tx = optax.adam(learning_rate=-alpha_a)
+        opt_state = jax.vmap(tx.init)(trajectories[1])
+        for k in range(5):
+            updated_actions, opt_state = fo_update_action_sequence(non_batched_env, trajectories[1], subkeys, tx, opt_state)
+            trajectories = trajectories[0], updated_actions
+
+        states, actions = trajectories[0], trajectories[1]
 
         # supervised learning
         for j in range(inner_epochs):
             for state_sequence, action_sequence in zip(states, actions):
-                value,train_state= update_policy(state_sequence, action_sequence, train_state, key3, lambda_policy_update)
+                value,train_state= update_policy(state_sequence, action_sequence, train_state, noise, key3, lambda_policy_update)
                 key4, key5 = jax.random.split(key3)
                 key3 = key4
             print("big epoch:",i,"small epoch:",j,"Loss",value)
@@ -234,6 +221,8 @@ def train(
             params = serialization.to_state_dict(train_state.policy_params)
             with open("params.pkl", "wb") as f:
                 pickle.dump(params, f)
+
+        noise = noise * noise_decay
 
     return functools.partial(make_policy, params=train_state.policy_params, network=train_state.policy_model)
 

@@ -11,28 +11,31 @@ class StochasticPolicy(nn.Module):
     def setup(self):
         self.dense1 = nn.Dense(32)
         self.dense2 = nn.Dense(64)
-
+        self.dense3 = nn.Dense(64)
+        self.dense4 = nn.Dense(32)
         self.dense5 = nn.Dense(10)
-        self.dense6 = nn.Dense(self.action_size+1)
+        self.dense6 = nn.Dense(self.action_size)
 
-    def __call__(self, x,rng_key=None, training=True):
+
+    def __call__(self, x, noise=1, rng_key=None, training=True):
         x = self.dense1(x)
         x = jax.nn.relu(x)
         x = self.dense2(x)
         x = jax.nn.relu(x)
+        x = self.dense3(x)
+        x = jax.nn.relu(x)
+        x = self.dense4(x)
+        x = jax.nn.relu(x)
         x = self.dense5(x)
-        x = jax.nn.tanh(x)
+        x = jax.nn.relu(x)
         x = self.dense6(x)
-
-        # mean, logvar = jnp.split(x, 2, axis=-1)
-        # logvar = jax.nn.sigmoid(logvar)
+        x = jax.nn.tanh(x)
 
         if not training:
             return x
 
-        # std = jnp.exp(0.5 * logvar)
-        eps = random.normal(rng_key, x.shape)
-        x = x + eps
         
+        x = x + jax.nn.tanh(jax.random.normal(rng_key, x.shape)) * noise
+
         return x
 
