@@ -16,6 +16,7 @@ from src.policy.StochasticPolicy import StochasticPolicy
 from src.env.Pendulum import State
 import time 
 from flax import serialization
+from flax.training import checkpoints, orbax_utils
 import pickle
 
 @flax.struct.dataclass
@@ -166,7 +167,9 @@ def train(
         policy_params=policy_params,
         optimizer_state=optimizer_state,
         optimizer=optimizer)
-    
+    orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
+    options = orbax.checkpoint.CheckpointManagerOptions(max_to_keep=2, create=True)
+    checkpoint_manager = orbax.checkpoint.CheckpointManager('/home/student/Documents/HDS/tmp/flax_ckpt/orbax/managed', orbax_checkpointer, options)
     # Initialize a nonbatched env
     non_batched_env = env 
     # Wrap the environment to allow vmapping
@@ -215,6 +218,10 @@ def train(
             print("big epoch:",i,"small epoch:",j,"Loss",value)
             if(value<1e-4):
                 break
+
+        ckpt = {'model': train_state}
+        save_args = orbax_utils.save_args_from_target(ckpt)
+        checkpoint_manager.save(i, ckpt, save_kwargs={'save_args': save_args})
             
        # checkpoint
         if i % 10 == 0:    
