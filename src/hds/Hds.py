@@ -7,6 +7,7 @@ import flax
 import jax
 import jax.numpy as jnp
 import optax
+import orbax.checkpoint
 import matplotlib.pyplot as plt
 from IPython.display import clear_output
 from functools import partial
@@ -169,7 +170,7 @@ def train(
         optimizer=optimizer)
     orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
     options = orbax.checkpoint.CheckpointManagerOptions(max_to_keep=2, create=True)
-    checkpoint_manager = orbax.checkpoint.CheckpointManager('/home/student/Documents/HDS/tmp/flax_ckpt/orbax/managed', orbax_checkpointer, options)
+    checkpoint_manager = orbax.checkpoint.CheckpointManager('/home/julianubuntu/Documents/HDS/tmp/flax_ckpt/orbax/managed', orbax_checkpointer, options)
     # Initialize a nonbatched env
     non_batched_env = env 
     # Wrap the environment to allow vmapping
