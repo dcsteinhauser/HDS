@@ -203,16 +203,6 @@ def train(
             * train_state.exploration_noise_decay
         )
 
-        # ckpt = {'model': train_state}
-        # save_args = orbax_utils.save_args_from_target(ckpt)
-        # checkpoint_manager.save(i, ckpt, save_kwargs={'save_args': save_args})
-
-    #    # checkpoint
-    #     if i % 10 == 0:
-    #         params = serialization.to_state_dict(train_state.policy_params)
-    #         with open("params.pkl", "wb") as f:
-    #             pickle.dump(params, f)
-
     return functools.partial(
-        make_policy, params=train_state.policy_params, network=train_state.policy_model
+        make_policy, params=train_state.policy_params, network=k_POLICY_MODEL
     )
