@@ -14,7 +14,7 @@ from IPython.display import clear_output
 from functools import partial
 
 from src.policy.DeterministicPolicy import DeterministicPolicy, Batch_DeterministicPolicy
-from src.env.Pendulum import State
+from src.envs.goodenv.Pendulum import State
 import time 
 from flax import serialization
 import pickle

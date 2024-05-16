@@ -14,7 +14,7 @@ from functools import partial
 
 from src.policy.DeterministicPolicy import DeterministicPolicy
 from src.policy.StochasticPolicy import StochasticPolicy
-from src.env.Pendulum import State
+from src.envs.goodenv.Pendulum import State
 import time
 from flax import serialization
 from flax.training import checkpoints, orbax_utils
