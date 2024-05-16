@@ -17,7 +17,7 @@ class StochasticPolicy(nn.Module):
         self.dense6 = nn.Dense(self.action_size)
 
 
-    def __call__(self, x, noise=1, rng_key=None, training=True):
+    def __call__(self, x, noise=1, rng_key=None):
         x = self.dense1(x)
         x = jax.nn.relu(x)
         x = self.dense2(x)
@@ -31,10 +31,9 @@ class StochasticPolicy(nn.Module):
         x = self.dense6(x)
         x = jax.nn.tanh(x)
 
-        if not training:
+        if rng_key is None:
             return x
 
-        
         x = x + jax.nn.tanh(jax.random.normal(rng_key, x.shape)) * noise
 
         return x

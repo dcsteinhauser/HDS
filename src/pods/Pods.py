@@ -108,6 +108,7 @@ def train(
     trajectory_length: int,
     num_samples: int,
     epochs: int,
+    inner_epochs: int,
     alpha_a: float,
     progress_fn=None):
 
@@ -177,23 +178,16 @@ def train(
         
         # update action sequence
         states, actions = trajectories[0], fo_update_action_sequence(non_batched_env, trajectories[1], subkeys, alpha_a)
-        #states, actions = trajectories[0], trajectories[1]
-        # print("halllooooooo")
-        # progress_fn(x_data,y_data,i,jnp.mean(totalreward))
 
         # supervised learning
-        for j in range(20):
+        for j in range(inner_epochs):
             for state_sequence, action_sequence in zip(states, actions):
                 value,train_state= update_policy(state_sequence, action_sequence, train_state)
             
             print("big epoch:",i,"small epoch:",j,"Loss",value)
             if(value<1e-5 or value == jnp.nan):
-                # print("OH NEINNNNNNNN")
                 break
         
-        # ckpt = {'model': train_state}
-        # save_args = orbax_utils.save_args_from_target(ckpt)
-        # checkpoint_manager.save(i, ckpt, save_kwargs={'save_args': save_args})
        
            
     
