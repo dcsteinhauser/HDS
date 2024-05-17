@@ -21,26 +21,9 @@ import pickle
 
 @flax.struct.dataclass
 class TrainState:
-    policy_model: DeterministicPolicy
     policy_params: Params
     optimizer_state: optax.OptState
-    optimizer: optax.GradientTransformation
-
-def generate_trajectory(environment, train_state: TrainState, trajectory_length: int, num_samples, prng_keys: PRNGKey):
     
-    states = jnp.zeros((num_samples, trajectory_length, environment.observation_size))
-    actions = jnp.zeros((num_samples, trajectory_length, environment.action_size))
-    state: State = environment.reset(prng_keys)
-    
-    for i in range(trajectory_length):
-        action = train_state.policy_model.apply(train_state.policy_params, state.obs)
-        next_state = environment.step(state, action)
-        states=states.at[:,i].set(state.obs)
-        actions=actions.at[:,i].set(action)
-        state = next_state
-
-    return states, actions
-
 
 
 
@@ -77,8 +60,9 @@ def train(
     # Define the policy and initialize it
     observation_size = int(env.observation_size)
     action_size = int(env.action_size)
-    policy_model = DeterministicPolicy(observation_size=observation_size,action_size= action_size)
-    policy_params = policy_model.init(key, jnp.ones((observation_size,)))
+
+    k_POLICY_MODEL = DeterministicPolicy(observation_size=observation_size,action_size= action_size)
+    policy_params = k_POLICY_MODEL.init(key, jnp.ones((observation_size,)))
     t0= time.time()
 
     # Define the optimizer
@@ -87,21 +71,19 @@ def train(
     transition_steps=1000,
     decay_rate=0.99)
     # Combining gradient transforms using `optax.chain`.
-    optimizer = optax.chain(
+    k_OPTIMIZER = optax.chain(
     #optax.clip_by_global_norm(1.0),  # Clip by the gradient by the global norm.
     optax.scale_by_adam(),  # Use the updates from adam.
     optax.scale_by_schedule(scheduler),  # Use the learning rate from the scheduler.
     # Scale updates by -1 since optax.apply_updates is additive and we want to descend on the loss.
     optax.scale(-1.0)
     )
-    optimizer_state = optimizer.init(policy_params)
+    optimizer_state = k_OPTIMIZER.init(policy_params)
 
     # Initialize the training state
     train_state = TrainState(
-        policy_model=policy_model, 
         policy_params=policy_params,
-        optimizer_state=optimizer_state,
-        optimizer=optimizer)
+        optimizer_state=optimizer_state,)
     # orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
     # options = orbax.checkpoint.CheckpointManagerOptions(max_to_keep=2, create=True)
     # checkpoint_manager = orbax.checkpoint.CheckpointManager('/home/student/Documents/HDS/tmp/flax_ckpt/orbax/managed', orbax_checkpointer, options)
@@ -109,7 +91,7 @@ def train(
     def generate_trajectory_parallel(train_state: TrainState, trajectory_length: int, prng_keys: PRNGKey):
 
         def step_trajectory(state_carry, rng_key):
-            action = train_state.policy_model.apply(train_state.policy_params, state_carry.obs)
+            action = k_POLICY_MODEL.apply(train_state.policy_params, state_carry.obs)
             next_state = k_NON_BATCHED_ENV.step(state_carry, action)
             return next_state, (state_carry.obs, action, next_state.reward)
 
@@ -145,20 +127,19 @@ def train(
     def update_policy(states, actions, train_state):
         params = train_state.policy_params
         optimizer_state = train_state.optimizer_state
-        optimizer = train_state.optimizer
 
         def loss_fn(params, states, actions):
-            model_output = train_state.policy_model.apply(params, states)
+            model_output = k_POLICY_MODEL.apply(params, states)
             return 0.5 * optax.losses.squared_error(model_output, actions).mean()
     
 
 
         
         value,grad = jax.value_and_grad(loss_fn)(params, states, actions)
-        updates, optimizer_state = optimizer.update(grad, optimizer_state)
+        updates, optimizer_state = k_OPTIMIZER.update(grad, optimizer_state)
         new_params = optax.apply_updates(params, updates)
-        train_state = train_state.replace(policy_params=new_params, optimizer_state=optimizer_state)
-        return value, train_state
+        new_train_state = train_state.replace(policy_params=new_params, optimizer_state=optimizer_state)
+        return value, new_train_state
     
     
     # Wrap the environment to allow vmapping
@@ -200,6 +181,6 @@ def train(
        
            
     
-    return functools.partial(make_policy, params=train_state.policy_params, network=train_state.policy_model)
+    return functools.partial(make_policy, params=train_state.policy_params, network=k_POLICY_MODEL)
 
             

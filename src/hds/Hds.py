@@ -32,7 +32,7 @@ class TrainState:
 def make_policy(network, params):
 
     def policy(obs):
-        return network.apply(params, obs, training=False)
+        return network.apply(params, obs)
 
     return policy
 
@@ -103,7 +103,7 @@ def train(
         def step_trajectory(state_carry, rng_key):
             action = k_POLICY_MODEL.apply(
                 train_state.policy_params,
-                state.obs,
+                state_carry.obs,
                 train_state.exploration_noise,
                 rng_key,
             )
