@@ -49,6 +49,7 @@ def train(
     epochs: int,
     inner_epochs: int,
     alpha_a: float,
+    init_learning_rate: float,
     progress_fn=None):
     # Initialize a nonbatched env
     k_NON_BATCHED_ENV = env 
@@ -67,7 +68,7 @@ def train(
 
     # Define the optimizer
     scheduler = optax.exponential_decay(
-    init_value=1e-4,
+    init_value=init_learning_rate,
     transition_steps=1000,
     decay_rate=0.99)
     # Combining gradient transforms using `optax.chain`.

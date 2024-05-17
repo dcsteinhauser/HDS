@@ -24,7 +24,7 @@ class DeterministicPolicy(nn.Module):
         x = self.dense4(x)
         x = jax.nn.relu(x)
         x = self.dense5(x)
-        x = jax.nn.tanh(x)
+        x = jax.nn.relu(x)
         x = self.dense6(x)
         x = jax.nn.tanh(x)
         return x
