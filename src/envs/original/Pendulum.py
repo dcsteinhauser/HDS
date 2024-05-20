@@ -16,30 +16,38 @@ from brax.positional import pipeline as p_pipeline
 from brax.spring import pipeline as s_pipeline
 from flax import struct
 import jax
+import mujoco
+from mujoco import mjx
+import numpy as np
 from functools import partial
-
-from ...dyn_model.Train import train
-from ...dyn_model.Predict import make_inference_fn
-from ...dyn_model.TuneModel import TuneModel
+from jax import vmap
 
 # Ugliest code I have seen in a while - Daniel
 @struct.dataclass
 class State(base.Base):
   """Environment state for training and inference."""
 
-  states: jax.Array
+  pipeline_state: Optional[base.State]
   obs: jax.Array
   reward: jax.Array
   done: jax.Array
+  # supposed target value to get your pendulum to go
+  # target: jax.Array
+  # distancex: jax.Array
+  # distancey: jax.Array
+  # #weights for target difference and position (like the apper)
+  # wx: jax.Array
+  # wp: jax.Array
+
   metrics: Dict[str, jax.Array] = struct.field(default_factory=dict)
   info: Dict[str, Any] = struct.field(default_factory=dict)
   
 
 
-class LearnedPendulum(PipelineEnv):
+class Pendulum(PipelineEnv):
   #didnt change from default
-  def __init__(self, backend='generalized',target = jp.array([0]), **kwargs):
-    path = 'src/envs/smoothenv/inverted_pendulum.xml'
+  def __init__(self, backend='generalized', **kwargs):
+    path = 'src/envs/original/inverted_pendulum.xml'
     sys = mjcf.load(path)
 
     n_frames = 2
@@ -49,7 +57,8 @@ class LearnedPendulum(PipelineEnv):
       sys = sys.replace(dt=0.005)
       n_frames = 4
     
-    self.inference_func = make_inference_fn(4,1)
+    
+
     kwargs['n_frames'] = kwargs.get('n_frames', n_frames)
     super().__init__(sys=sys, backend=backend, **kwargs)
   
@@ -65,23 +74,22 @@ class LearnedPendulum(PipelineEnv):
         rng2, (self.sys.qd_size(),), minval=-5, maxval=5
     )
     pipeline_state = self.pipeline_init(q, qd)
-    qqd = jp.concatenate([pipeline_state.q, pipeline_state.qd])
-    
     obs = self._get_obs(pipeline_state)
     reward, done = jp.zeros(2)
     metrics = {}
 
-    return State(qqd, obs, reward, done, metrics)
+    return State(pipeline_state, obs, reward, done, metrics)
   
 
   @partial(jax.jit, static_argnums=(0))
-  def step(self, state: State, action: jax.Array, params: dict) -> State:
+  def step(self, state: State, action: jax.Array) -> State:
     """Run one timestep of the environment's dynamics."""
-    #current and next statex
-    qqd= state.states
-    qqd_next = self.inference_func(jp.concatenate((qqd,action)),params) # add model inference here
-    obs_prev = qqd
-    obs_next = qqd_next
+    #current and next state
+    pipeline_state=state.pipeline_state
+    pipeline_state_next = self.pipeline_step(state.pipeline_state, action)
+    #current and next observations
+    obs_prev = self._get_obs(state.pipeline_state)
+    obs_next = self._get_obs(pipeline_state_next)
 
     x_pos = obs_next[0]
     pseudo_angle = jp.cos(obs_next[1])
@@ -91,10 +99,12 @@ class LearnedPendulum(PipelineEnv):
 
     done = jax.lax.cond(jp.logical_and(jp.logical_and(jp.square(x_pos) < 0.001, jp.square(pseudo_angle) < 0.001), 
                                        jp.logical_and(jp.square(angle_vel) < 0.001, jp.square(x_vel) < 0.001)), lambda x: 1.0, lambda x: 0.0, None)
-    reward = jax.lax.cond(done, lambda x: jp.square(action).sum(), lambda x: -1*(pseudo_angle)**2 - 1*angle_vel**2 - 2*x_pos**2 - 0.5*x_vel**2, None)
+    reward = jax.lax.cond(done, lambda x: jp.square(action).sum(), lambda x: -1*(pseudo_angle)**2 - 1*angle_vel**2  - 1.5*(x_pos)**2 - 0.5*x_vel**2, None)
 
-    return jax.lax.cond(done, lambda x: State(qqd, obs_prev, reward, done, metrics={}), 
-                        lambda x: State(qqd_next, obs_next, reward, done, metrics={}), None)
+    return jax.lax.cond(done, lambda x: State(pipeline_state, obs_prev, reward, done, metrics={}), 
+                        lambda x: State(pipeline_state_next, obs_next, reward, done, metrics={}), None)
+
+
 
 #rest here is default
   @property
@@ -104,13 +114,3 @@ class LearnedPendulum(PipelineEnv):
   def _get_obs(self, pipeline_state: base.State) -> jax.Array:
     """Observe cartpole body position and velocities."""
     return jp.concatenate([pipeline_state.q, pipeline_state.qd])
-
-  @partial(jax.jit, static_argnums=(0,))
-  def tunemodel(self, params, obs_sequence,action_sequence):
-    obs_t = obs_sequence[:-1]
-    obs_tp = obs_sequence[1:]
-    action_t = action_sequence[:-1]
-    Y_data = obs_tp
-
-    return TuneModel(obs_t,action_t,Y_data,params,self.inference_func)
-  

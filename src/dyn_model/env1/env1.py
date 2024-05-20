@@ -47,7 +47,7 @@ class State(base.Base):
 class InvertedPendulum(PipelineEnv):
   #didnt change from default
   def __init__(self, backend='generalized',target = jp.array([0]), **kwargs):
-    path = './src/dyn_model/env1/inverted_pendulum.xml'
+    path = 'env1/inverted_pendulum.xml'
     sys = mjcf.load(path)
 
     n_frames = 2

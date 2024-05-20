@@ -1,25 +1,17 @@
 import functools
 
-from brax import envs
 from brax.training.types import Params
 from brax.training.types import PRNGKey
 import flax
 import jax
 import jax.numpy as jnp
 import optax
-import orbax.checkpoint
-import matplotlib.pyplot as plt
-from IPython.display import clear_output
 from functools import partial
 
-from src.policy.DeterministicPolicy import DeterministicPolicy
 from src.policy.StochasticPolicy import StochasticPolicy
-from src.envs.goodenv.Pendulum import State
-import time
-from flax import serialization
-from flax.training import checkpoints, orbax_utils
-import pickle
-
+from src.envs.learnedenv.LearnedPendulum import LearnedPendulum
+from src.envs.original.Pendulum import State
+from src.dyn_model.Predict import pretrained_params
 
 @flax.struct.dataclass
 class TrainState:
@@ -27,6 +19,7 @@ class TrainState:
     optimizer_state: optax.OptState
     exploration_noise: float
     exploration_noise_decay: float
+    dynamics_model_params: Params
 
 
 def make_policy(network, params):
@@ -44,13 +37,24 @@ def train(
     epochs: int,
     inner_epochs: int,
     alpha_a: float,
+    aggregation_factor_beta: float,
     init_learning_rate: float,
     init_noise=1.0,
     noise_decay=0.99,
     progress_fn=None,
 ):
-
+    # initialize environments
     k_NON_BATCHED_ENV = env
+    k_LEARNED_ENV = LearnedPendulum(action_size=int(env.action_size),observation_size=int(env.observation_size))
+    dynamics_pretrained_params = pretrained_params()
+
+    # initialize array for whether to use learned or original env
+    num_from_learned_env = int(num_samples*aggregation_factor_beta)
+    from_learned_env = jnp.ones((num_from_learned_env,))
+    from_original_env = jnp.zeros((num_samples-num_from_learned_env,))
+    use_learned_env = jnp.concatenate((from_learned_env, from_original_env))
+
+    # for progress fn
     x_data = []
     y_data = []
 
@@ -89,15 +93,12 @@ def train(
         optimizer_state=optimizer_state,
         exploration_noise=init_noise,
         exploration_noise_decay=noise_decay,
+        dynamics_model_params=dynamics_pretrained_params,
     )
 
-    # orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
-    # options = orbax.checkpoint.CheckpointManagerOptions(max_to_keep=2, create=True)
-    # checkpoint_manager = orbax.checkpoint.CheckpointManager('/home/julianubuntu/Documents/HDS/tmp/flax_ckpt/orbax/managed', orbax_checkpointer, options)
-
-    @partial(jax.vmap, in_axes=(None, None, 0), axis_name="batch")
+    @partial(jax.vmap, in_axes=(None, None, 0, 0), axis_name="batch")
     def generate_trajectory_parallel(
-        train_state: TrainState, trajectory_length: int, prng_keys: PRNGKey
+        train_state: TrainState, trajectory_length: int, prng_keys: PRNGKey, use_learned_env: jnp.ndarray
     ):
 
         def step_trajectory(state_carry, rng_key):
@@ -110,11 +111,29 @@ def train(
             next_state = k_NON_BATCHED_ENV.step(state_carry, action)
             return next_state, (state_carry.obs, action, next_state.reward)
 
-        state: State = k_NON_BATCHED_ENV.reset(prng_keys)
+        def step_trajectory_learned_env(state_carry, rng_key):
+            action = k_POLICY_MODEL.apply(
+                train_state.policy_params,
+                state_carry.obs,
+                train_state.exploration_noise,
+                rng_key,
+            )
+            next_state = k_LEARNED_ENV.step(state_carry, action, params = train_state.dynamics_model_params)
+            return next_state, (state_carry.obs, action, next_state.reward)
+        
+        def select_fn(input):
+            _, (states, actions, rewards_future) = input
+            return states, actions, rewards_future
+        
         keys = jax.random.split(prng_keys, trajectory_length)
-        _, (states, actions, rewards_future) = jax.lax.scan(
-            step_trajectory, state, xs=keys
-        )
+
+        states, actions, rewards_future = jax.lax.cond(use_learned_env, 
+            lambda _: select_fn(jax.lax.scan(step_trajectory_learned_env, k_LEARNED_ENV.reset(prng_keys), xs=keys)), 
+            lambda _: select_fn(jax.lax.scan(step_trajectory, k_NON_BATCHED_ENV.reset(prng_keys), xs=keys)), 0)
+
+        # initial_state = k_LEARNED_ENV.reset(prng_keys)
+        # _, (states, actions, rewards_future) = jax.lax.scan(
+        #     step_trajectory_learned_env, initial_state, xs=keys)
 
         states = jax.numpy.reshape(
             states, (trajectory_length, k_NON_BATCHED_ENV.observation_size)
@@ -127,9 +146,9 @@ def train(
 
         return states, actions, total_reward
 
-    @partial(jax.vmap, in_axes=(0, 0, None), out_axes=0, axis_name="batch")
+    @partial(jax.vmap, in_axes=(0, None, 0, None, 0), out_axes=0, axis_name="batch")
     @jax.jit
-    def fo_update_action_sequence(actions, prng_key, alpha_a):
+    def fo_update_action_sequence(actions, train_state, prng_key, alpha_a, use_learned_env):
 
         def total_reward(actions, prng_key):
 
@@ -139,8 +158,19 @@ def train(
             initial_states = k_NON_BATCHED_ENV.reset(prng_key)
             _, rewards = jax.lax.scan(f=reward_step, init=initial_states, xs=actions)
             return jnp.sum(rewards, axis=0)
+        
+        def total_reward_learned(actions, prng_key):
 
-        grad = jax.grad(total_reward, argnums=0)(actions, prng_key)
+            def reward_step(states, action):
+                return k_LEARNED_ENV.step(states, action,params=train_state.dynamics_model_params), states.reward
+
+            initial_states = k_LEARNED_ENV.reset(prng_key)
+            _, rewards = jax.lax.scan(f=reward_step, init=initial_states, xs=actions)
+            return jnp.sum(rewards, axis=0)
+
+        grad = jax.lax.cond(use_learned_env, 
+                            lambda _: jax.grad(total_reward_learned, argnums=0)(actions, prng_key), 
+                            lambda _: jax.grad(total_reward, argnums=0)(actions, prng_key), 0)
         new_actions = actions + alpha_a * grad
         return new_actions
 
@@ -161,18 +191,22 @@ def train(
             optimizer_state=optimizer_state,
             exploration_noise=train_state.exploration_noise,
             exploration_noise_decay=train_state.exploration_noise_decay,
+            dynamics_model_params=train_state.dynamics_model_params,
         )
         return value, new_train_state
 
     for i in range(epochs):
         # update rng keys
-        key1, key2, key3 = jax.random.split(new_key, num=3)
+        key1, key2, key3, shuffle_key = jax.random.split(new_key, num=4)
         new_key = key1
         subkeys = jax.random.split(key2, num_samples)
 
+        # shuffle use_learned_env
+        shuffled_use_learned_env = jax.random.permutation(shuffle_key, use_learned_env)
+
         # generate trajectories
         trajectories = generate_trajectory_parallel(
-            train_state, trajectory_length, subkeys
+            train_state, trajectory_length, subkeys, shuffled_use_learned_env
         )
         average_reward = trajectories[2]
         trajectories = trajectories[:2]
@@ -182,10 +216,10 @@ def train(
 
         # update action sequence
         states, new_actions = trajectories[0], fo_update_action_sequence(
-            trajectories[1], subkeys, alpha_a
+            trajectories[1], train_state, subkeys, alpha_a, shuffled_use_learned_env
         )
 
-        # supervised learning
+        # supervised learning with early stopping
         for j in range(inner_epochs):
             for state_sequence, action_sequence in zip(states, new_actions):
                 value, train_state = update_policy(
