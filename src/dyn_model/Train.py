@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import optax
 import jax
 from flax.training import train_state
-
+from functools import partial
 
 
 def mse_loss(params, apply_fn, x, y):
@@ -17,7 +17,7 @@ def create_train_state(rng, learning_rate, observation_size,action_size):
     tx = optax.adam(learning_rate)
     return train_state.TrainState.create(apply_fn=model.apply, params=params, tx=tx)
 
-
+@jax.jit
 def train_step(state, batch):
     def loss_fn(params):
         loss = mse_loss(params, state.apply_fn, batch['x'], batch['y'])
@@ -26,7 +26,6 @@ def train_step(state, batch):
     grads = jax.grad(loss_fn)(state.params)
     state = state.apply_gradients(grads=grads)
     return state
-
 
 def train(rng, X_train, y_train, X_test, y_test, observation_size,action_size, learning_rate=0.001, num_epochs=100, batch_size=32):
     state = create_train_state(rng, learning_rate, observation_size,action_size)

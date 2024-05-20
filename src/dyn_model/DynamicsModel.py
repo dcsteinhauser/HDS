@@ -9,8 +9,10 @@ class model(nn.Module):
     def setup (self):
         self.dense1 = nn.Dense(8)
         self.dense2 = nn.Dense(16)
-        self.dense3 = nn.Dense(8)
-        self.dense4 = nn.Dense(self.output_size)
+        self.dense3 = nn.Dense(64)
+        self.dense4 = nn.Dense(16)
+        self.dense5 = nn.Dense(8)
+        self.dense6 = nn.Dense(self.output_size)
 
     def __call__ (self, x):
         x = self.dense1(x)
@@ -18,7 +20,12 @@ class model(nn.Module):
         x = self.dense2(x)
         x = jax.nn.relu(x)
         x = self.dense3(x)
+        x = jax.nn.relu(x)
         x = self.dense4(x)
+        x = jax.nn.relu(x)
+        x = self.dense5(x)
+        x = jax.nn.relu(x)
+        x = self.dense6(x)
         return x
 
 
