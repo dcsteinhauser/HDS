@@ -1,5 +1,3 @@
-import env1.env1 as googenv
-import env2.env2 as badenv
 from flax import linen as nn
 import jax
 
