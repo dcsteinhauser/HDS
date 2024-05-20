@@ -13,6 +13,7 @@ from src.envs.learnedenv.LearnedPendulum import LearnedPendulum
 from src.envs.original.Pendulum import State
 from src.dyn_model.Predict import pretrained_params
 
+
 @flax.struct.dataclass
 class TrainState:
     policy_params: Params
@@ -45,13 +46,15 @@ def train(
 ):
     # initialize environments
     k_NON_BATCHED_ENV = env
-    k_LEARNED_ENV = LearnedPendulum(action_size=int(env.action_size),observation_size=int(env.observation_size))
+    k_LEARNED_ENV = LearnedPendulum(
+        action_size=int(env.action_size), observation_size=int(env.observation_size)
+    )
     dynamics_pretrained_params = pretrained_params()
 
     # initialize array for whether to use learned or original env
-    num_from_learned_env = int(num_samples*aggregation_factor_beta)
+    num_from_learned_env = int(num_samples * aggregation_factor_beta)
     from_learned_env = jnp.ones((num_from_learned_env,))
-    from_original_env = jnp.zeros((num_samples-num_from_learned_env,))
+    from_original_env = jnp.zeros((num_samples - num_from_learned_env,))
     use_learned_env = jnp.concatenate((from_learned_env, from_original_env))
 
     # for progress fn
@@ -98,7 +101,10 @@ def train(
 
     @partial(jax.vmap, in_axes=(None, None, 0, 0), axis_name="batch")
     def generate_trajectory_parallel(
-        train_state: TrainState, trajectory_length: int, prng_keys: PRNGKey, use_learned_env: jnp.ndarray
+        train_state: TrainState,
+        trajectory_length: int,
+        prng_keys: PRNGKey,
+        use_learned_env: jnp.ndarray,
     ):
 
         def step_trajectory(state_carry, rng_key):
@@ -118,18 +124,31 @@ def train(
                 train_state.exploration_noise,
                 rng_key,
             )
-            next_state = k_LEARNED_ENV.step(state_carry, action, params = train_state.dynamics_model_params)
+            next_state = k_LEARNED_ENV.step(
+                state_carry, action, params=train_state.dynamics_model_params
+            )
             return next_state, (state_carry.obs, action, next_state.reward)
-        
+
         def select_fn(input):
             _, (states, actions, rewards_future) = input
             return states, actions, rewards_future
-        
+
         keys = jax.random.split(prng_keys, trajectory_length)
 
-        states, actions, rewards_future = jax.lax.cond(use_learned_env, 
-            lambda _: select_fn(jax.lax.scan(step_trajectory_learned_env, k_LEARNED_ENV.reset(prng_keys), xs=keys)), 
-            lambda _: select_fn(jax.lax.scan(step_trajectory, k_NON_BATCHED_ENV.reset(prng_keys), xs=keys)), 0)
+        states, actions, rewards_future = jax.lax.cond(
+            use_learned_env,
+            lambda _: select_fn(
+                jax.lax.scan(
+                    step_trajectory_learned_env, k_LEARNED_ENV.reset(prng_keys), xs=keys
+                )
+            ),
+            lambda _: select_fn(
+                jax.lax.scan(
+                    step_trajectory, k_NON_BATCHED_ENV.reset(prng_keys), xs=keys
+                )
+            ),
+            0,
+        )
 
         # initial_state = k_LEARNED_ENV.reset(prng_keys)
         # _, (states, actions, rewards_future) = jax.lax.scan(
@@ -148,7 +167,9 @@ def train(
 
     @partial(jax.vmap, in_axes=(0, None, 0, None, 0), out_axes=0, axis_name="batch")
     @jax.jit
-    def fo_update_action_sequence(actions, train_state, prng_key, alpha_a, use_learned_env):
+    def fo_update_action_sequence(
+        actions, train_state, prng_key, alpha_a, use_learned_env
+    ):
 
         def total_reward(actions, prng_key):
 
@@ -158,19 +179,27 @@ def train(
             initial_states = k_NON_BATCHED_ENV.reset(prng_key)
             _, rewards = jax.lax.scan(f=reward_step, init=initial_states, xs=actions)
             return jnp.sum(rewards, axis=0)
-        
+
         def total_reward_learned(actions, prng_key):
 
             def reward_step(states, action):
-                return k_LEARNED_ENV.step(states, action,params=train_state.dynamics_model_params), states.reward
+                return (
+                    k_LEARNED_ENV.step(
+                        states, action, params=train_state.dynamics_model_params
+                    ),
+                    states.reward,
+                )
 
             initial_states = k_LEARNED_ENV.reset(prng_key)
             _, rewards = jax.lax.scan(f=reward_step, init=initial_states, xs=actions)
             return jnp.sum(rewards, axis=0)
 
-        grad = jax.lax.cond(use_learned_env, 
-                            lambda _: jax.grad(total_reward_learned, argnums=0)(actions, prng_key), 
-                            lambda _: jax.grad(total_reward, argnums=0)(actions, prng_key), 0)
+        grad = jax.lax.cond(
+            use_learned_env,
+            lambda _: jax.grad(total_reward_learned, argnums=0)(actions, prng_key),
+            lambda _: jax.grad(total_reward, argnums=0)(actions, prng_key),
+            0,
+        )
         new_actions = actions + alpha_a * grad
         return new_actions
 

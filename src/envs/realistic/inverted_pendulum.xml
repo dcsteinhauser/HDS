@@ -1,0 +1,32 @@
+<mujoco model="inverted pendulum">
+  <compiler angle="radian"/>
+  <option timestep="0.02" gravity="-6.6 0 -9.81" density="10"/>
+  <size nstack="3000"/>
+  <default class="main">
+    <joint limited="false" damping="0.3"/>
+    <geom contype="0" friction="1 0.1 0.1" rgba="0.4 0.33 0.26 1"/>
+    <general ctrlrange="-3 3"/>
+  </default>
+  <custom>
+    <numeric name="constraint_stiffness" size="1" data="10000"/>
+    <numeric name="constraint_limit_stiffness" size="1" data="10000"/>
+    <numeric name="spring_mass_scale" size="1" data="0"/>
+    <numeric name="spring_inertia_scale" size="1" data="1"/>
+    <numeric name="solver_maxls" size="1" data="5"/>
+  </custom>
+  <worldbody>
+    <geom name="rail" size="0.02 10" quat="0.707107 0 0.707107 0" type="capsule" rgba="1 1 1 1"/>
+    <light pos="0 0 3" dir="0 0 -1" diffuse="0.5 0.5 0.5"/>
+    <body name="cart">
+      <joint name="slider" pos="0 0 0" axis="1 0 0" type="slide" limited="true" range="-10 10" damping="40"/>
+      <geom name="cart" size="0.1 0.1" quat="0.707107 0 0.707107 0" type="capsule"/>
+      <body name="pole">
+        <joint name="hinge" pos="0 0 0" axis="0 1 0" range="-90 90"/>
+        <geom name="cpole" size="0.049 0.3" pos="0.0005 0 0.3" quat="0.000833332 0 -1 0" type="capsule"/>
+      </body>
+    </body>
+  </worldbody>
+  <actuator>
+    <general name="slide" joint="slider" ctrllimited="true" gear="100 0 0 0 0 0"/>
+  </actuator>
+</mujoco>
