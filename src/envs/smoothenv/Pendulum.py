@@ -36,7 +36,7 @@ class State(base.Base):
   
 
 
-class InvertedPendulum(PipelineEnv):
+class LearnedPendulum(PipelineEnv):
   #didnt change from default
   def __init__(self, backend='generalized',target = jp.array([0]), **kwargs):
     path = 'src/envs/smoothenv/inverted_pendulum.xml'
