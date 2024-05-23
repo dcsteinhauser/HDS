@@ -150,10 +150,6 @@ def train(
             0,
         )
 
-        # initial_state = k_LEARNED_ENV.reset(prng_keys)
-        # _, (states, actions, rewards_future) = jax.lax.scan(
-        #     step_trajectory_learned_env, initial_state, xs=keys)
-
         states = jax.numpy.reshape(
             states, (trajectory_length, k_NON_BATCHED_ENV.observation_size)
         )
@@ -255,7 +251,7 @@ def train(
                     state_sequence, action_sequence, train_state
                 )
             print("big epoch:", i, "small epoch:", j, "Loss", value)
-            if value < 1e-4:
+            if value < 1e-5:
                 break
 
         # update exploration noise

@@ -61,8 +61,8 @@ def train(
     k_POLICY_MODEL = DeterministicPolicy(
         observation_size=observation_size, action_size=action_size
     )
+
     policy_params = k_POLICY_MODEL.init(key, jnp.ones((observation_size,)))
-    t0 = time.time()
 
     # Define the optimizer
     scheduler = optax.exponential_decay(
@@ -76,6 +76,7 @@ def train(
         # Scale updates by -1 since optax.apply_updates is additive and we want to descend on the loss.
         optax.scale(-1.0),
     )
+
     optimizer_state = k_OPTIMIZER.init(policy_params)
 
     # Initialize the training state
@@ -148,8 +149,6 @@ def train(
         )
         return value, new_train_state
 
-    # Wrap the environment to allow vmapping
-
     # 1. run m episodes of the environment using the policy, of length trajectory_length
     # 2. collect the states and actions encountered in each episode
     # 3. for each episode initialize an array which has the sequence of actions taken by the policy
@@ -185,7 +184,6 @@ def train(
                 value, train_state = update_policy(
                     state_sequence, action_sequence, train_state
                 )
-
             print("big epoch:", i, "small epoch:", j, "Loss", value)
             if value < 1e-5 or value == jnp.nan:
                 break
