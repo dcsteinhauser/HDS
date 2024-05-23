@@ -71,9 +71,9 @@ def train(
     k_POLICY_MODEL = StochasticPolicy(
         observation_size=observation_size, action_size=action_size
     )
-    noise = init_noise
+    
     policy_params = k_POLICY_MODEL.init(
-        key, jnp.ones((observation_size,)), noise, subkey
+        key, jnp.ones((observation_size,))
     )
 
     # Define the optimizer
@@ -226,7 +226,7 @@ def train(
 
     for i in range(epochs):
         # update rng keys
-        key1, key2, key3, shuffle_key = jax.random.split(new_key, num=4)
+        key1, key2, shuffle_key = jax.random.split(new_key, num=3)
         new_key = key1
         subkeys = jax.random.split(key2, num_samples)
 
@@ -254,8 +254,6 @@ def train(
                 value, train_state = update_policy(
                     state_sequence, action_sequence, train_state
                 )
-                key4, key5 = jax.random.split(key3)
-                key3 = key4
             print("big epoch:", i, "small epoch:", j, "Loss", value)
             if value < 1e-4:
                 break

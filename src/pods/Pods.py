@@ -160,7 +160,7 @@ def train(
 
     for i in range(epochs):
         # update rng keys
-        key1, key2 = jax.random.split(new_key)
+        key1, key2, shuffle_key = jax.random.split(new_key, num=3)
         new_key = key1
         subkeys = jax.random.split(key2, num_samples)
 
