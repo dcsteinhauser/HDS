@@ -10,7 +10,7 @@ def make_inference_fn(observation_size, action_size):
     return inference_fun
 
 def pretrained_params():
-    ckpt_dir = os.path.abspath('src/dyn_model/params/1')
+    ckpt_dir = os.path.abspath('src/dyn_model/params/2')
     ckptr = ocp.AsyncCheckpointer(ocp.StandardCheckpointHandler())
     params = ckptr.restore(ckpt_dir)
     return params
