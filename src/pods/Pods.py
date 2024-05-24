@@ -132,6 +132,30 @@ def train(
         new_actions = actions + alpha_a * grad
         return new_actions
 
+    def check_symmetric(a, rtol=1e-05, atol=1e-08):
+        return jnp.allclose(a, a.T, rtol=rtol, atol=atol)
+
+    @partial(jax.vmap, in_axes=(0, 0, None), out_axes=0, axis_name="batch")
+    @jax.jit
+    def so_update_action_sequence(actions, prng_key, alpha_a):
+
+        def total_reward(actions, prng_key):
+
+            def reward_step(states, action):
+                return k_NON_BATCHED_ENV.step(states, action), states.reward
+
+            initial_states = k_NON_BATCHED_ENV.reset(prng_key)
+            _, rewards = jax.lax.scan(f=reward_step, init=initial_states, xs=actions)
+            return jnp.sum(rewards, axis=0)
+        
+        transpose_grad = lambda actions, prng_keys: jnp.transpose(jax.grad(total_reward)(actions, prng_keys))
+        grad = jax.grad(total_reward, argnums=0)(actions, prng_key)
+        # hess = jax.jacfwd(transpose_grad)(actions, prng_key)
+        hess = jax.jacrev(jax.jacfwd(total_reward))(actions, prng_key)
+        hess_inv = jnp.linalg.inv(hess)
+        new_actions = actions + alpha_a * jnp.matmul(hess_inv, grad)
+        return new_actions
+
     @jax.jit
     def update_policy(states, actions, train_state):
         params = train_state.policy_params
@@ -174,7 +198,7 @@ def train(
         progress_fn(x_data, y_data, i, jnp.mean(total_reward))
 
         # update action sequence
-        states, actions = trajectories[0], fo_update_action_sequence(
+        states, actions = trajectories[0], so_update_action_sequence(
             trajectories[1], subkeys, alpha_a
         )
 

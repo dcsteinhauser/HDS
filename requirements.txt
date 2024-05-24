@@ -9,8 +9,8 @@ attrs==23.2.0
 Babel==2.14.0
 beautifulsoup4==4.12.3
 bleach==6.1.0
-blinker==1.7.0
-brax==0.10.3
+blinker==1.8.2
+-e git+ssh://git@github.com/google/brax.git@2635079451e64140f16b3d15b4e0885447863a23#egg=brax
 certifi==2024.2.2
 cffi==1.16.0
 charset-normalizer==3.3.2
@@ -31,15 +31,15 @@ exceptiongroup==1.2.1
 executing==2.0.1
 fastjsonschema==2.19.1
 Flask==3.0.3
-Flask-Cors==4.0.0
-flax==0.8.2
+Flask-Cors==4.0.1
+flax==0.8.3
 fonttools==4.51.0
 fqdn==1.5.1
-fsspec==2024.3.1
+fsspec==2024.5.0
 gitdb==4.0.11
 GitPython==3.1.41
 glfw==2.7.0
-grpcio==1.62.2
+grpcio==1.64.0
 gym==0.26.2
 gym-notices==0.0.8
 h11==0.14.0
@@ -51,9 +51,8 @@ ipykernel==6.29.4
 ipython==8.23.0
 isoduration==20.11.0
 itsdangerous==2.2.0
---pre
---find-links https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
-jax[cuda12]==0.4.26
+jax==0.4.28
+jaxlib==0.4.28
 jaxopt==0.8.3
 jedi==0.19.1
 Jinja2==3.1.3
@@ -77,11 +76,11 @@ matplotlib==3.8.4
 matplotlib-inline==0.1.7
 mdurl==0.1.2
 mistune==3.0.2
+ml-collections==0.1.1
 ml-dtypes==0.4.0
-ml_collections==0.1.1
 msgpack==1.0.8
-mujoco==3.1.4
-mujoco-mjx==3.1.4
+mujoco==3.1.5
+mujoco-mjx==3.1.5
 nbclient==0.10.0
 nbconvert==7.16.3
 nbformat==5.10.4
@@ -91,7 +90,7 @@ notebook_shim==0.2.4
 numpy==1.26.4
 opt-einsum==3.3.0
 optax==0.2.2
-orbax-checkpoint==0.5.10
+orbax-checkpoint==0.5.14
 overrides==7.7.0
 packaging==24.0
 pandocfilters==1.5.1
@@ -99,9 +98,10 @@ parso==0.8.4
 pexpect==4.9.0
 pillow==10.3.0
 platformdirs==4.2.0
+pre-commit==3.4.0
 prometheus_client==0.20.0
 prompt-toolkit==3.0.43
-protobuf==5.26.1
+protobuf==5.27.0
 psutil==5.9.8
 ptyprocess==0.7.0
 pure-eval==0.2.2
@@ -120,7 +120,7 @@ rfc3339-validator==0.1.4
 rfc3986-validator==0.1.1
 rich==13.7.1
 rpds-py==0.18.0
-scipy==1.13.0
+scipy==1.13.1
 Send2Trash==1.8.3
 six==1.16.0
 smmap==5.0.1
@@ -128,14 +128,14 @@ sniffio==1.3.1
 soupsieve==2.5
 stack-data==0.6.3
 tensorboardX==2.6.2.2
-tensorstore==0.1.56
+tensorstore==0.1.59
 terminado==0.18.1
 tinycss2==1.2.1
 tomli==2.0.1
 toolz==0.12.1
 tornado==6.4
 traitlets==5.14.3
-trimesh==4.3.1
+trimesh==4.4.0
 types-python-dateutil==2.9.0.20240316
 typing_extensions==4.11.0
 uri-template==1.3.0
@@ -144,5 +144,5 @@ wcwidth==0.2.13
 webcolors==1.13
 webencodings==0.5.1
 websocket-client==1.7.0
-Werkzeug==3.0.2
+Werkzeug==3.0.3
 zipp==3.18.1
