@@ -27,7 +27,7 @@ class DeterministicPolicy(nn.Module):
         x = jax.nn.relu(x)
         x = self.dense6(x)
         x = jax.nn.tanh(x)
-        return x
+        return x/3.0
 
 Batch_DeterministicPolicy = nn.vmap(DeterministicPolicy,in_axes = 0,out_axes=0, variable_axes={'params': None},
     split_rngs={'params': False})

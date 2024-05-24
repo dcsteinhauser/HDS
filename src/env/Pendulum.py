@@ -67,9 +67,11 @@ class InvertedPendulum(PipelineEnv):
     """Resets the environment to an initial state."""
     rng, rng1, rng2, rng3 = jax.random.split(rng,4)
 
-    q = self.sys.init_q + jax.random.uniform(
-        rng1, (self.sys.q_size(),), minval=-5, maxval=5
-    )
+    q = self.sys.init_q 
+    #initialize the entries of q separately
+    q = q.at[0].add(jax.random.uniform(key=rng1, minval=-5, maxval=5))
+    q = q.at[1].add(jax.random.uniform(key=rng1, minval=-0.01, maxval=0.01))
+
     qd = jax.random.uniform(
         rng2, (self.sys.qd_size(),), minval=-5, maxval=5
     )
@@ -106,6 +108,10 @@ class InvertedPendulum(PipelineEnv):
   def step(self, state: State, action: jax.Array) -> State:
     """Run one timestep of the environment's dynamics."""
     #current and next state
+    action_min = self.sys.actuator.ctrl_range[:, 0]
+    action_max = self.sys.actuator.ctrl_range[:, 1]
+    action = (action + 1) * (action_max - action_min) * 0.5 + action_min
+
     pipeline_state=state.pipeline_state
     pipeline_state_next = self.pipeline_step(state.pipeline_state, action)
     #current and next observations

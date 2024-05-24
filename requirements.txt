@@ -10,7 +10,7 @@ Babel==2.14.0
 beautifulsoup4==4.12.3
 bleach==6.1.0
 blinker==1.7.0
-brax==0.10.3
+brax==0.10.4    
 certifi==2024.2.2
 cffi==1.16.0
 charset-normalizer==3.3.2
@@ -81,7 +81,7 @@ ml-dtypes==0.4.0
 ml_collections==0.1.1
 msgpack==1.0.8
 mujoco==3.1.4
-mujoco-mjx==3.1.4
+mujoco-mjx==3.1.5
 nbclient==0.10.0
 nbconvert==7.16.3
 nbformat==5.10.4
