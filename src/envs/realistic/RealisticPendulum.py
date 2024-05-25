@@ -46,7 +46,7 @@ class State(base.Base):
 
 class RealisticPendulum(PipelineEnv):
   #didnt change from default
-  def __init__(self, backend='generalized', **kwargs):
+  def __init__(self, backend='spring', **kwargs):
     path = 'src/envs/realistic/inverted_pendulum.xml'
     sys = mjcf.load(path)
 

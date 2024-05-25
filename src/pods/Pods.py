@@ -198,7 +198,7 @@ def train(
         progress_fn(x_data, y_data, i, jnp.mean(total_reward))
 
         # update action sequence
-        states, actions = trajectories[0], so_update_action_sequence(
+        states, actions = trajectories[0], fo_update_action_sequence(
             trajectories[1], subkeys, alpha_a
         )
 

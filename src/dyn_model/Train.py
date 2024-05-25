@@ -32,6 +32,7 @@ def train(rng, X_train, y_train, X_test, y_test, observation_size,action_size, l
     num_batches = X_train.shape[0] // batch_size
     
     for epoch in range(num_epochs):
+        print(epoch)
         perm = jax.random.permutation(rng, X_train.shape[0])
         X_train_shuffled = X_train[perm]
         y_train_shuffled = y_train[perm]
