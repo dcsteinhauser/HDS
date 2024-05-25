@@ -45,6 +45,7 @@ def train(
     inner_epochs: int,
     alpha_a: float,
     init_learning_rate: float,
+    second_order=False,
     progress_fn=None,
 ):
     # Initialize a nonbatched env
@@ -132,26 +133,26 @@ def train(
         new_actions = actions + alpha_a * grad
         return new_actions
 
-    def check_symmetric(a, rtol=1e-05, atol=1e-08):
-        return jnp.allclose(a, a.T, rtol=rtol, atol=atol)
-
     @partial(jax.vmap, in_axes=(0, 0, None), out_axes=0, axis_name="batch")
     @jax.jit
     def so_update_action_sequence(actions, prng_key, alpha_a):
-
-        def total_reward(actions, prng_key):
-
-            def reward_step(states, action):
-                return k_NON_BATCHED_ENV.step(states, action), states.reward
-
-            initial_states = k_NON_BATCHED_ENV.reset(prng_key)
-            _, rewards = jax.lax.scan(f=reward_step, init=initial_states, xs=actions)
-            return jnp.sum(rewards, axis=0)
         
-        transpose_grad = lambda actions, prng_keys: jnp.transpose(jax.grad(total_reward)(actions, prng_keys))
-        grad = jax.grad(total_reward, argnums=0)(actions, prng_key)
-        # hess = jax.jacfwd(transpose_grad)(actions, prng_key)
-        hess = jax.jacrev(jax.jacfwd(total_reward))(actions, prng_key)
+        def grad_and_hess(actions, prng_key):
+            def total_reward(actions, prng_key):
+
+                def reward_step(states, action):
+                    return k_NON_BATCHED_ENV.step(states, action), states.reward
+
+                initial_states = k_NON_BATCHED_ENV.reset(prng_key)
+                _, rewards = jax.lax.scan(f=reward_step, init=initial_states, xs=actions)
+                return jnp.sum(rewards, axis=0)
+            
+            grad = jax.grad(total_reward, argnums=0)(actions, prng_key)
+            hess = jax.jacfwd(jax.grad(total_reward))(actions, prng_key)
+
+            return grad, hess
+        
+        grad, hess = grad_and_hess(actions, prng_key)
         hess_inv = jnp.linalg.inv(hess)
         new_actions = actions + alpha_a * jnp.matmul(hess_inv, grad)
         return new_actions
@@ -162,7 +163,7 @@ def train(
         optimizer_state = train_state.optimizer_state
 
         def loss_fn(params, states, actions):
-            model_output = k_POLICY_MODEL.apply(params, states)
+            model_output = jnp.squeeze(k_POLICY_MODEL.apply(params, states))
             return 0.5 * optax.losses.squared_error(model_output, actions).mean()
 
         value, grad = jax.value_and_grad(loss_fn)(params, states, actions)
@@ -173,6 +174,10 @@ def train(
         )
         return value, new_train_state
 
+    if second_order:
+        update_action_sequence = so_update_action_sequence
+    else:
+        update_action_sequence = fo_update_action_sequence
     # 1. run m episodes of the environment using the policy, of length trajectory_length
     # 2. collect the states and actions encountered in each episode
     # 3. for each episode initialize an array which has the sequence of actions taken by the policy
@@ -193,12 +198,13 @@ def train(
         )
         total_reward = trajectories[2]
         trajectories = trajectories[:2]
+        trajectories = tuple(map(jnp.squeeze, trajectories))
 
         # output progress
         progress_fn(x_data, y_data, i, jnp.mean(total_reward))
 
         # update action sequence
-        states, actions = trajectories[0], so_update_action_sequence(
+        states, actions = trajectories[0], update_action_sequence(
             trajectories[1], subkeys, alpha_a
         )
 
