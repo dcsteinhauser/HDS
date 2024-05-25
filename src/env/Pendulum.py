@@ -69,12 +69,14 @@ class InvertedPendulum(PipelineEnv):
 
     q = self.sys.init_q 
     #initialize the entries of q separately
-    q = q.at[0].add(jax.random.uniform(key=rng1, minval=-5, maxval=5))
-    q = q.at[1].add(jax.random.uniform(key=rng1, minval=-0.01, maxval=0.01))
+    q = q.at[0].add(jax.random.uniform(key=rng1, minval=-3, maxval=3))
+    q = q.at[1].add(jax.random.uniform(key=rng1, minval=-3.2, maxval=-3.1))
 
-    qd = jax.random.uniform(
-        rng2, (self.sys.qd_size(),), minval=-5, maxval=5
-    )
+    #qd = jax.random.uniform(rng2, (self.sys.qd_size(),), minval=-3, maxval=3)
+    qd = jax.numpy.array([0.0,0.0])
+    qd.at[0].set(jax.random.uniform(key=rng2, minval=-3.2, maxval=-3.1))
+    qd.at[1].set(jax.random.uniform(key=rng2, minval=-0.2, maxval=-0.2))
+
     pipeline_state = self.pipeline_init(q, qd)
     obs = self._get_obs(pipeline_state)
     # configuration if pendulum is just supposed to go to downward position not necessarily origin
@@ -119,15 +121,15 @@ class InvertedPendulum(PipelineEnv):
     obs_next = self._get_obs(pipeline_state_next)
 
     x_pos = obs_next[0]
-    pseudo_angle = jp.cos(obs_next[1])
+    pseudo_angle = obs_next[1]
     x_vel = obs_next[2]
     angle_vel = obs_next[3]
     
 
     done = jax.lax.cond(jp.logical_and(jp.logical_and(jp.square(x_pos) < 0.001, jp.square(pseudo_angle) < 0.001), 
                                        jp.logical_and(jp.square(angle_vel) < 0.001, jp.square(x_vel) < 0.001)), lambda x: 1.0, lambda x: 0.0, None)
-    reward = jax.lax.cond(done, lambda x: jp.square(action).sum(), lambda x: -1*(pseudo_angle)**2 - 1*angle_vel**2  - 1.5*(x_pos)**2 - 0.5*x_vel**2, None)
-
+    reward = jax.lax.cond(done, lambda x: jp.square(action).sum(), lambda x: -10*action[0] -4*(pseudo_angle)**2 - 0.01*angle_vel**2  - 0.1*(x_pos)**2 - 0.5*x_vel**2, None)
+    #if done is True, reset 
     return jax.lax.cond(done, lambda x: State(pipeline_state, obs_prev, reward, done, metrics={}), 
                         lambda x: State(pipeline_state_next, obs_next, reward, done, metrics={}), None)
 

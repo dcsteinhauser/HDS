@@ -107,9 +107,9 @@ def train(
 
         return states, actions, totalreward
     
-    @partial(jax.vmap,in_axes=(0,0,None),out_axes=0,axis_name="batch")
+    @partial(jax.vmap,in_axes=(0,0,None, None),out_axes=0,axis_name="batch")
     @jax.jit
-    def fo_update_action_sequence(actions, prng_key, alpha_a):
+    def fo_update_action_sequence(actions, prng_key, alpha_a, cooling_rate):
 
         def total_reward(actions, prng_key):
         
@@ -119,9 +119,24 @@ def train(
             initial_states = k_NON_BATCHED_ENV.reset(prng_key)
             _, rewards = jax.lax.scan(f=reward_step, init=initial_states, xs=actions)
             return jnp.sum(rewards, axis=0)
-    
+        
+
+        
+        def simulatedannealing(i, alpha_a_k):
+            alpha_a_k_new = alpha_a_k + jax.random.uniform(prng_key, minval=-0.001, maxval=0.001)
+            delta_reward = total_reward(actions + alpha_a_k_new * grad, prng_key) - total_reward(actions + alpha_a_k * grad, prng_key)
+            exp_term = jnp.exp(jnp.divide(delta_reward,(1*cooling_rate**i)))
+            #cond = (jax.random.uniform(prng_key, minval=0, maxval =1) < exp_term)
+            pred = jnp.logical_or((delta_reward > 0.0), False)
+            alpha_a_best = jax.lax.cond(pred, lambda x: alpha_a_k_new, lambda x: alpha_a_k, (alpha_a_k, alpha_a_k_new))
+            return alpha_a_best
+        
         grad =  jax.grad(total_reward, argnums=0)(actions, prng_key)
-        new_actions = actions + alpha_a * grad
+        alpha_a_best = jax.lax.fori_loop(0, 50, simulatedannealing, alpha_a)
+
+        
+        new_actions = actions + alpha_a_best * grad
+
         return new_actions
     
     @jax.jit
@@ -168,7 +183,7 @@ def train(
         progress_fn(x_data,y_data,i,jnp.mean(total_reward))
         
         # update action sequence
-        states, actions = trajectories[0], fo_update_action_sequence(trajectories[1], subkeys, alpha_a)
+        states, actions = trajectories[0], fo_update_action_sequence(trajectories[1], subkeys, alpha_a, 0.98)
 
         # supervised learning
         for j in range(inner_epochs):
