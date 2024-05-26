@@ -1,10 +1,10 @@
 <mujoco model="inverted pendulum">
   <compiler angle="radian"/>
-  <option timestep="0.02" gravity="-6.6 0 -9.81" density="10"/>
+  <option timestep="0.02" gravity="0 0 -9.81" density="10"/>
   <size nstack="3000"/>
   <default class="main">
-    <joint limited="false" damping="0.3"/>
-    <geom contype="0" friction="1 0.1 0.1" rgba="0.4 0.33 0.26 1"/>
+    <joint limited="false" damping="0.7"/>
+    <geom contype="1" conaffinity="1" friction="1 0.1 0.1" rgba="0.4 0.33 0.26 1"/>
     <general ctrlrange="-3 3"/>
   </default>
   <custom>
@@ -15,18 +15,22 @@
     <numeric name="solver_maxls" size="1" data="5"/>
   </custom>
   <worldbody>
-    <geom name="rail" size="0.02 10" quat="0.707107 0 0.707107 0" type="capsule" rgba="1 1 1 1"/>
+    <geom name="rail" size="0.02 10" pos="0 -0.12 0" quat="0.707107 0 0.707107 0" type="capsule" rgba="1 1 1 1" />
     <light pos="0 0 3" dir="0 0 -1" diffuse="0.5 0.5 0.5"/>
-    <body name="cart">
+    <body name="cart" pos="0 0 0">
       <joint name="slider" pos="0 0 0" axis="1 0 0" type="slide" limited="true" range="-10 10" damping="40"/>
-      <geom name="cart" size="0.1 0.1" quat="0.707107 0 0.707107 0" type="capsule"/>
+      <geom name="cart" size="0.1 0.1" type="capsule" quat="0.707107 0 0.707107 0"/>
       <body name="pole">
-        <joint name="hinge" pos="0 0 0" axis="0 1 0" range="-90 90"/>
-        <geom name="cpole" size="0.049 0.3" pos="0.0005 0 0.3" quat="0.000833332 0 -1 0" type="capsule"/>
+        <joint name="hinge" pos="0 0 0" axis="0 1 0" range="-180 180"/>
+        <geom name="cpole" size="0.049 0.3" pos="0 0 0.3" type="capsule"/>
       </body>
     </body>
   </worldbody>
   <actuator>
     <general name="slide" joint="slider" ctrllimited="true" gear="100 0 0 0 0 0"/>
   </actuator>
+  <contact>
+    <pair geom1="rail" geom2="cart" condim="3" friction="4"/>
+  </contact>
+  
 </mujoco>
