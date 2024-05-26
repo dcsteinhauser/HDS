@@ -2,7 +2,7 @@
   <compiler inertiafromgeom="true"/>
   <default>
   <!-- this is one here is the pendulum swingin, if set to true does the bouncy thing-->
-    <joint armature="0" damping="0.6" limited="false"/>
+    <joint armature="0" damping="1" limited="false"/>
     <geom contype="0" friction="1 0.1 0.1" rgba="0.4 0.33 0.26 1.0"/>
     <tendon/>
     <motor ctrlrange="-3 3"/>

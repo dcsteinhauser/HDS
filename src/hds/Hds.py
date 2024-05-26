@@ -141,7 +141,7 @@ def train(
             return jnp.sum(rewards, axis=0)
         
         def simulatedannealing(i, alpha_a_k):
-            alpha_a_k_new = alpha_a_k + jax.random.uniform(prng_key, minval=-0.01, maxval=0.01)
+            alpha_a_k_new = alpha_a_k + jax.random.uniform(prng_key, minval=-0.005, maxval=0.005)
             delta_reward = total_reward(actions + alpha_a_k_new * grad, prng_key) - total_reward(actions + alpha_a_k * grad, prng_key)
             exp_term = jnp.exp(jnp.divide(delta_reward,(1*cooling_rate**i)))
             #cond = (jax.random.uniform(prng_key, minval=0, maxval =1) < exp_term)
@@ -149,8 +149,24 @@ def train(
             alpha_a_best = jax.lax.cond(pred, lambda x: alpha_a_k_new, lambda x: alpha_a_k, (alpha_a_k, alpha_a_k_new))
             return alpha_a_best
         
+        def cond_fun(tuplething):
+            i, _, reward_best, _ = tuplething
+            return i< 32
+        
+        def linesearch_backtrackung(tuplething):
+            i, alpha_a_best, reward_best, reward_init = tuplething
+            alpha_a_k_new = alpha_a/(2**i)
+            reward_new = total_reward(actions + alpha_a_k_new * grad, prng_key)
+            delta_reward = reward_new - reward_best
+            pred = delta_reward > 0.0
+            alpha_a_best, reward_best = jax.lax.cond(pred, lambda x: (alpha_a_k_new, reward_new), lambda x: (alpha_a_best, reward_best),(alpha_a_best, reward_best, alpha_a_k_new, reward_new))
+            return (i+1, alpha_a_best, reward_best, reward_init)
+        
+        
         grad =  jax.grad(total_reward, argnums=0)(actions, prng_key)
-        alpha_a_best = jax.lax.fori_loop(0, 50, simulatedannealing, alpha_a)
+        initial_reward = total_reward(actions, prng_key)
+        _, alpha_a_best, _, _ = jax.lax.while_loop(cond_fun, linesearch_backtrackung, (0, alpha_a, initial_reward, initial_reward))
+        #alpha_a_best = jax.lax.fori_loop(0, 50, simulatedannealing, alpha_a)
 
         
         new_actions = actions + alpha_a_best * grad
