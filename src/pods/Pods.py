@@ -1,26 +1,18 @@
 import functools
 
-from brax import envs
-from brax.training.types import Params
-from brax.training.types import PRNGKey
 import flax
-from flax.training import checkpoints, orbax_utils
 import jax
 import jax.numpy as jnp
 import optax
-import orbax.checkpoint
 import matplotlib.pyplot as plt
 from IPython.display import clear_output
 from functools import partial
+from brax.training.types import Params
+from brax.training.types import PRNGKey
+from brax.envs.wrappers.training import AutoResetWrapper
 
-from src.policy.DeterministicPolicy import (
-    DeterministicPolicy,
-    Batch_DeterministicPolicy,
-)
+from src.policy.DeterministicPolicy import DeterministicPolicy
 from src.envs.train.Pendulum import State
-import time
-from flax import serialization
-import pickle
 
 
 @flax.struct.dataclass
@@ -49,7 +41,7 @@ def train(
     progress_fn=None,
 ):
     # Initialize a nonbatched env
-    k_NON_BATCHED_ENV = env
+    k_NON_BATCHED_ENV = AutoResetWrapper(env)
 
     # get a random key
     key = jax.random.PRNGKey(0)
@@ -128,35 +120,43 @@ def train(
             initial_states = k_NON_BATCHED_ENV.reset(prng_key)
             _, rewards = jax.lax.scan(f=reward_step, init=initial_states, xs=actions)
             return jnp.sum(rewards, axis=0)
-        
+
         def cond_fun(tuplething):
             i, _, _, _ = tuplething
-            return i< 32
-        
+            return i < 32
+
         def linesearch_backtracking(tuplething):
             i, alpha_a_best, reward_best, reward_init = tuplething
-            alpha_a_k_new = alpha_a_init/(2**i)
+            alpha_a_k_new = alpha_a_init / (2**i)
             new_actions = actions + alpha_a_k_new * grad
             reward_new = total_reward(new_actions, prng_key)
             delta_reward = reward_new - reward_best
             pred = delta_reward > 0.0
-            alpha_a_best, reward_best = jax.lax.cond(pred, lambda x: (alpha_a_k_new, reward_new), lambda x: (alpha_a_best, reward_best),(alpha_a_best, reward_best, alpha_a_k_new, reward_new))
-            return (i+1, alpha_a_best, reward_best, reward_init)
-        
+            alpha_a_best, reward_best = jax.lax.cond(
+                pred,
+                lambda x: (alpha_a_k_new, reward_new),
+                lambda x: (alpha_a_best, reward_best),
+                (alpha_a_best, reward_best, alpha_a_k_new, reward_new),
+            )
+            return (i + 1, alpha_a_best, reward_best, reward_init)
+
         grad = jax.grad(total_reward, argnums=0)(actions, prng_key)
 
-        initial_reward = total_reward(actions+alpha_a_init*grad, prng_key)
+        initial_reward = total_reward(actions + alpha_a_init * grad, prng_key)
 
-        _, alpha_a_best, _, _ = jax.lax.while_loop(cond_fun, linesearch_backtracking, (0, alpha_a_init, initial_reward, initial_reward))
+        _, alpha_a_best, _, _ = jax.lax.while_loop(
+            cond_fun,
+            linesearch_backtracking,
+            (0, alpha_a_init, initial_reward, initial_reward),
+        )
 
-        
         new_actions = actions + alpha_a_best * grad
         return new_actions
 
     @partial(jax.vmap, in_axes=(0, 0, None), out_axes=0, axis_name="batch")
     @jax.jit
     def so_update_action_sequence(actions, prng_key, alpha_a_init):
-        
+
         def grad_and_hess(actions, prng_key):
             def total_reward(actions, prng_key):
 
@@ -164,14 +164,16 @@ def train(
                     return k_NON_BATCHED_ENV.step(states, action), states.reward
 
                 initial_states = k_NON_BATCHED_ENV.reset(prng_key)
-                _, rewards = jax.lax.scan(f=reward_step, init=initial_states, xs=actions)
+                _, rewards = jax.lax.scan(
+                    f=reward_step, init=initial_states, xs=actions
+                )
                 return jnp.sum(rewards, axis=0)
-            
+
             grad = jax.grad(total_reward, argnums=0)(actions, prng_key)
             hess = jax.jacfwd(jax.grad(total_reward))(actions, prng_key)
 
             return grad, hess
-        
+
         grad, hess = grad_and_hess(actions, prng_key)
         hess_inv = jnp.linalg.inv(jnp.squeeze(hess))
         new_actions = actions + alpha_a_init * jnp.matmul(hess_inv, grad)
@@ -195,7 +197,9 @@ def train(
         return value, new_train_state
 
     if second_order:
-        print("[WARNING] Using second order optimization. This may be slow, and suffers from severe numerical instability.")
+        print(
+            "[WARNING] Using second order optimization. This may be slow, and suffers from severe numerical instability."
+        )
         update_action_sequence = so_update_action_sequence
     else:
         update_action_sequence = fo_update_action_sequence
@@ -215,7 +219,6 @@ def train(
         )
         total_reward = trajectories[2]
         trajectories = trajectories[:2]
-    
 
         # output progress
         progress_fn(x_data, y_data, i, jnp.mean(total_reward))

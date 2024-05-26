@@ -92,8 +92,8 @@ class Pendulum(PipelineEnv):
                                        jp.logical_and(jp.square(angle_vel) < 0.001, jp.square(x_vel) < 0.001)), lambda x: 1.0, lambda x: 0.0, None)
     reward = jax.lax.cond(done, lambda x: jp.square(action).sum(), lambda x: -1*(pseudo_angle)**2 - 1*angle_vel**2  - 1.5*(x_pos)**2 - 0.5*x_vel**2, None)
 
-    return jax.lax.cond(done, lambda x: State(pipeline_state, obs_prev, reward, done, metrics={}), 
-                        lambda x: State(pipeline_state_next, obs_next, reward, done, metrics={}), None)
+    return jax.lax.cond(done, lambda x: State(pipeline_state, obs_prev, reward, done, metrics={}, info=state.info), 
+                        lambda x: State(pipeline_state_next, obs_next, reward, done, metrics={}, info=state.info), None)
 
 
 
