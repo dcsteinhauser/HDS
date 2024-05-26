@@ -43,7 +43,7 @@ def train(
     num_samples: int,
     epochs: int,
     inner_epochs: int,
-    alpha_a: float,
+    alpha_a_init: float,
     init_learning_rate: float,
     second_order=False,
     progress_fn=None,
@@ -118,7 +118,7 @@ def train(
 
     @partial(jax.vmap, in_axes=(0, 0, None), out_axes=0, axis_name="batch")
     @jax.jit
-    def fo_update_action_sequence(actions, prng_key, alpha_a):
+    def fo_update_action_sequence(actions, prng_key, alpha_a_init):
 
         def total_reward(actions, prng_key):
 
@@ -135,7 +135,7 @@ def train(
         
         def linesearch_backtracking(tuplething):
             i, alpha_a_best, reward_best, reward_init = tuplething
-            alpha_a_k_new = alpha_a/(2**i)
+            alpha_a_k_new = alpha_a_init/(2**i)
             new_actions = actions + alpha_a_k_new * grad
             reward_new = total_reward(new_actions, prng_key)
             delta_reward = reward_new - reward_best
@@ -145,9 +145,9 @@ def train(
         
         grad = jax.grad(total_reward, argnums=0)(actions, prng_key)
 
-        initial_reward = total_reward(actions+alpha_a*grad, prng_key)
+        initial_reward = total_reward(actions+alpha_a_init*grad, prng_key)
 
-        _, alpha_a_best, _, _ = jax.lax.while_loop(cond_fun, linesearch_backtracking, (0, alpha_a, initial_reward, initial_reward))
+        _, alpha_a_best, _, _ = jax.lax.while_loop(cond_fun, linesearch_backtracking, (0, alpha_a_init, initial_reward, initial_reward))
 
         
         new_actions = actions + alpha_a_best * grad
@@ -155,7 +155,7 @@ def train(
 
     @partial(jax.vmap, in_axes=(0, 0, None), out_axes=0, axis_name="batch")
     @jax.jit
-    def so_update_action_sequence(actions, prng_key, alpha_a):
+    def so_update_action_sequence(actions, prng_key, alpha_a_init):
         
         def grad_and_hess(actions, prng_key):
             def total_reward(actions, prng_key):
@@ -174,7 +174,7 @@ def train(
         
         grad, hess = grad_and_hess(actions, prng_key)
         hess_inv = jnp.linalg.inv(jnp.squeeze(hess))
-        new_actions = actions + alpha_a * jnp.matmul(hess_inv, grad)
+        new_actions = actions + alpha_a_init * jnp.matmul(hess_inv, grad)
         return new_actions
 
     @jax.jit
@@ -222,7 +222,7 @@ def train(
 
         # update action sequence
         states, actions = trajectories[0], update_action_sequence(
-            trajectories[1], subkeys, alpha_a
+            trajectories[1], subkeys, alpha_a_init
         )
 
         # supervised learning

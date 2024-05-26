@@ -37,7 +37,7 @@ def train(
     num_samples: int,
     epochs: int,
     inner_epochs: int,
-    alpha_a: float,
+    alpha_a_init: float,
     aggregation_factor_beta: float,
     init_learning_rate: float,
     init_noise=1.0,
@@ -164,7 +164,7 @@ def train(
     @partial(jax.vmap, in_axes=(0, None, 0, None, 0), out_axes=0, axis_name="batch")
     @jax.jit
     def fo_update_action_sequence(
-        actions, train_state, prng_key, alpha_a, use_learned_env
+        actions, train_state, prng_key, alpha_a_init, use_learned_env
     ):
 
         def total_reward(actions, prng_key):
@@ -196,7 +196,7 @@ def train(
             delta_reward = total_reward(actions + alpha_a_k_new * grad, prng_key) - total_reward(actions + alpha_a_k * grad, prng_key)
             exp_term = jnp.exp(jnp.divide(delta_reward,(1*cooling_rate**i)))
             cond = (jax.random.uniform(prng_key, minval=0, maxval =1) < exp_term)
-            pred = jnp.logical_or((delta_reward > 0.0), False)
+            pred = jnp.logical_or((delta_reward > 0.0), cond)
             alpha_a_best = jax.lax.cond(pred, lambda x: alpha_a_k_new, lambda x: alpha_a_k, (alpha_a_k, alpha_a_k_new))
             return alpha_a_best
         
@@ -206,7 +206,7 @@ def train(
         
         def linesearch_backtracking(tuplething):
             i, alpha_a_best, reward_best, reward_init = tuplething
-            alpha_a_k_new = alpha_a/(2**i)
+            alpha_a_k_new = alpha_a_init/(2**i)
             new_actions = actions + alpha_a_k_new * grad
             reward_new = jax.lax.cond(
             use_learned_env,
@@ -227,13 +227,13 @@ def train(
         
         initial_reward = jax.lax.cond(
             use_learned_env,
-            lambda _: total_reward_learned(actions+ alpha_a * grad, prng_key),
-            lambda _: total_reward(actions+ alpha_a * grad, prng_key),
+            lambda _: total_reward_learned(actions+ alpha_a_init * grad, prng_key),
+            lambda _: total_reward(actions+ alpha_a_init * grad, prng_key),
             0,
         )
 
-        _, alpha_a_best, _, _ = jax.lax.while_loop(cond_fun, linesearch_backtracking, (0, alpha_a, initial_reward, initial_reward))
-        #alpha_a_best = jax.lax.fori_loop(0, 50, simulatedannealing, alpha_a)
+        _, alpha_a_best, _, _ = jax.lax.while_loop(cond_fun, linesearch_backtracking, (0, alpha_a_init, initial_reward, initial_reward))
+        #alpha_a_best = jax.lax.fori_loop(0, 50, simulatedannealing, alpha_a_init)
 
 
         new_actions = actions + alpha_a_best * grad
@@ -281,7 +281,7 @@ def train(
 
         # update action sequence
         states, new_actions = trajectories[0], fo_update_action_sequence(
-            trajectories[1], train_state, subkeys, alpha_a, shuffled_use_learned_env
+            trajectories[1], train_state, subkeys, alpha_a_init, shuffled_use_learned_env
         )
 
         # supervised learning with early stopping
