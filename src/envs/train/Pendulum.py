@@ -31,28 +31,19 @@ class State(base.Base):
   obs: jax.Array
   reward: jax.Array
   done: jax.Array
-  # supposed target value to get your pendulum to go
-  # target: jax.Array
-  # distancex: jax.Array
-  # distancey: jax.Array
-  # #weights for target difference and position (like the apper)
-  # wx: jax.Array
-  # wp: jax.Array
-
   metrics: Dict[str, jax.Array] = struct.field(default_factory=dict)
   info: Dict[str, Any] = struct.field(default_factory=dict)
   
 
 
-class RealisticPendulum(PipelineEnv):
+class Pendulum(PipelineEnv):
   #didnt change from default
   def __init__(self, backend='generalized', **kwargs):
-    path = 'env1/inverted_pendulum.xml'
+    path = 'src/envs/train/inverted_pendulum.xml'
     sys = mjcf.load(path)
 
     n_frames = 2
 
-    # self.target = target
     if backend in ['spring', 'positional']:
       sys = sys.replace(dt=0.005)
       n_frames = 4
@@ -101,8 +92,8 @@ class RealisticPendulum(PipelineEnv):
                                        jp.logical_and(jp.square(angle_vel) < 0.001, jp.square(x_vel) < 0.001)), lambda x: 1.0, lambda x: 0.0, None)
     reward = jax.lax.cond(done, lambda x: jp.square(action).sum(), lambda x: -1*(pseudo_angle)**2 - 1*angle_vel**2  - 1.5*(x_pos)**2 - 0.5*x_vel**2, None)
 
-    return jax.lax.cond(done, lambda x: State(pipeline_state, obs_prev, reward, done, metrics={}), 
-                        lambda x: State(pipeline_state_next, obs_next, reward, done, metrics={}), None)
+    return jax.lax.cond(done, lambda x: State(pipeline_state, obs_prev, reward, done, metrics={}, info=state.info), 
+                        lambda x: State(pipeline_state_next, obs_next, reward, done, metrics={}, info=state.info), None)
 
 
 
