@@ -1,7 +1,7 @@
 from flax import linen as nn
 import jax
 
-class model(nn.Module):
+class DynamicsModel(nn.Module):
 
     output_size: int
     input_size: int

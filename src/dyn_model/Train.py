@@ -1,4 +1,4 @@
-from DynamicsModel import model as DynamicsModel
+from DynamicsModel import DynamicsModel
 import jax.numpy as jnp
 import optax
 import jax
