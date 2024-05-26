@@ -128,9 +128,29 @@ def train(
             initial_states = k_NON_BATCHED_ENV.reset(prng_key)
             _, rewards = jax.lax.scan(f=reward_step, init=initial_states, xs=actions)
             return jnp.sum(rewards, axis=0)
-
+        
+        def cond_fun(tuplething):
+            i, _, _, _ = tuplething
+            return i< 32
+        
+        def linesearch_backtracking(tuplething):
+            i, alpha_a_best, reward_best, reward_init = tuplething
+            alpha_a_k_new = alpha_a/(2**i)
+            new_actions = actions + alpha_a_k_new * grad
+            reward_new = total_reward(new_actions, prng_key)
+            delta_reward = reward_new - reward_best
+            pred = delta_reward > 0.0
+            alpha_a_best, reward_best = jax.lax.cond(pred, lambda x: (alpha_a_k_new, reward_new), lambda x: (alpha_a_best, reward_best),(alpha_a_best, reward_best, alpha_a_k_new, reward_new))
+            return (i+1, alpha_a_best, reward_best, reward_init)
+        
         grad = jax.grad(total_reward, argnums=0)(actions, prng_key)
-        new_actions = actions + alpha_a * grad
+
+        initial_reward = total_reward(actions+alpha_a*grad, prng_key)
+
+        _, alpha_a_best, _, _ = jax.lax.while_loop(cond_fun, linesearch_backtracking, (0, alpha_a, initial_reward, initial_reward))
+
+        
+        new_actions = actions + alpha_a_best * grad
         return new_actions
 
     @partial(jax.vmap, in_axes=(0, 0, None), out_axes=0, axis_name="batch")

@@ -190,15 +190,55 @@ def train(
             _, rewards = jax.lax.scan(f=reward_step, init=initial_states, xs=actions)
             return jnp.sum(rewards, axis=0)
 
+        def simulatedannealing(i, alpha_a_k):
+            cooling_rate = 0.95
+            alpha_a_k_new = alpha_a_k + jax.random.uniform(prng_key, minval=-0.005, maxval=0.005)
+            delta_reward = total_reward(actions + alpha_a_k_new * grad, prng_key) - total_reward(actions + alpha_a_k * grad, prng_key)
+            exp_term = jnp.exp(jnp.divide(delta_reward,(1*cooling_rate**i)))
+            cond = (jax.random.uniform(prng_key, minval=0, maxval =1) < exp_term)
+            pred = jnp.logical_or((delta_reward > 0.0), False)
+            alpha_a_best = jax.lax.cond(pred, lambda x: alpha_a_k_new, lambda x: alpha_a_k, (alpha_a_k, alpha_a_k_new))
+            return alpha_a_best
+        
+        def cond_fun(tuplething):
+            i, _, _, _ = tuplething
+            return i< 32
+        
+        def linesearch_backtracking(tuplething):
+            i, alpha_a_best, reward_best, reward_init = tuplething
+            alpha_a_k_new = alpha_a/(2**i)
+            new_actions = actions + alpha_a_k_new * grad
+            reward_new = jax.lax.cond(
+            use_learned_env,
+            lambda _: total_reward_learned(new_actions, prng_key),
+            lambda _: total_reward(new_actions, prng_key),
+            0,)
+            delta_reward = reward_new - reward_best
+            pred = delta_reward > 0.0
+            alpha_a_best, reward_best = jax.lax.cond(pred, lambda x: (alpha_a_k_new, reward_new), lambda x: (alpha_a_best, reward_best),(alpha_a_best, reward_best, alpha_a_k_new, reward_new))
+            return (i+1, alpha_a_best, reward_best, reward_init)
+        
         grad = jax.lax.cond(
             use_learned_env,
             lambda _: jax.grad(total_reward_learned, argnums=0)(actions, prng_key),
             lambda _: jax.grad(total_reward, argnums=0)(actions, prng_key),
             0,
         )
-        new_actions = actions + alpha_a * grad
-        return new_actions
+        
+        initial_reward = jax.lax.cond(
+            use_learned_env,
+            lambda _: total_reward_learned(actions+ alpha_a * grad, prng_key),
+            lambda _: total_reward(actions+ alpha_a * grad, prng_key),
+            0,
+        )
 
+        _, alpha_a_best, _, _ = jax.lax.while_loop(cond_fun, linesearch_backtracking, (0, alpha_a, initial_reward, initial_reward))
+        #alpha_a_best = jax.lax.fori_loop(0, 50, simulatedannealing, alpha_a)
+
+
+        new_actions = actions + alpha_a_best * grad
+        return new_actions
+    
     @jax.jit
     def update_policy(states, actions, train_state):
         params = train_state.policy_params
