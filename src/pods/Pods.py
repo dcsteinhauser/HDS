@@ -179,11 +179,7 @@ def train(
         update_action_sequence = so_update_action_sequence
     else:
         update_action_sequence = fo_update_action_sequence
-    # 1. run m episodes of the environment using the policy, of length trajectory_length
-    # 2. collect the states and actions encountered in each episode
-    # 3. for each episode initialize an array which has the sequence of actions taken by the policy
-    # 4. rerun the environment, using the array of actions as input, and calculate the total reward
-    # 5. calculate the gradient of the total reward with respect to the array of aprng_key[0]
+
     x_data = []
     y_data = []
 
