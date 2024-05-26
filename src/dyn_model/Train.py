@@ -42,9 +42,9 @@ def train(rng, X_train, y_train, X_test, y_test, observation_size,action_size, l
             batch = {'x': X_train_shuffled[batch_idx], 'y': y_train_shuffled[batch_idx]}
             state = train_step(state, batch)
 
-        if epoch % 10 == 0:
-            train_loss = mse_loss(state.params, state.apply_fn, X_train, y_train)
-            test_loss = mse_loss(state.params, state.apply_fn, X_test, y_test)
-            print(f"Epoch {epoch}, Train Loss: {train_loss:.4f}, Test Loss: {test_loss:.4f}")
+
+        train_loss = mse_loss(state.params, state.apply_fn, X_train, y_train)
+        test_loss = mse_loss(state.params, state.apply_fn, X_test, y_test)
+        print(f"Epoch {epoch}, Train Loss: {train_loss:.4f}, Test Loss: {test_loss:.4f}")
 
     return state.params
