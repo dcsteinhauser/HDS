@@ -22,7 +22,7 @@ from ...dyn_model.Predict import make_inference_fn
 from ...dyn_model.TuneModel import TuneModel
 # from original.Pendulum import State as OriginalState
 
-# Ugliest code I have seen in a while - Daniel
+
 @struct.dataclass
 class State(base.Base):
   """Environment state for training and inference."""
@@ -34,7 +34,6 @@ class State(base.Base):
   metrics: Dict[str, jax.Array] = struct.field(default_factory=dict)
   info: Dict[str, Any] = struct.field(default_factory=dict)
   
-
 
 class LearnedPendulum(PipelineEnv):
   #didnt change from default
@@ -96,7 +95,7 @@ class LearnedPendulum(PipelineEnv):
     return jax.lax.cond(done, lambda x: State(qqd, obs_prev, reward, done, metrics={}), 
                         lambda x: State(qqd_next, obs_next, reward, done, metrics={}), None)
 
-#rest here is default
+
   @property
   def action_size(self):
     return 1

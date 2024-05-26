@@ -31,14 +31,6 @@ class State(base.Base):
   obs: jax.Array
   reward: jax.Array
   done: jax.Array
-  # supposed target value to get your pendulum to go
-  # target: jax.Array
-  # distancex: jax.Array
-  # distancey: jax.Array
-  # #weights for target difference and position (like the apper)
-  # wx: jax.Array
-  # wp: jax.Array
-
   metrics: Dict[str, jax.Array] = struct.field(default_factory=dict)
   info: Dict[str, Any] = struct.field(default_factory=dict)
   
@@ -47,12 +39,11 @@ class State(base.Base):
 class Pendulum(PipelineEnv):
   #didnt change from default
   def __init__(self, backend='generalized', **kwargs):
-    path = 'src/envs/original/inverted_pendulum.xml'
+    path = 'src/envs/train/inverted_pendulum.xml'
     sys = mjcf.load(path)
 
     n_frames = 2
 
-    # self.target = target
     if backend in ['spring', 'positional']:
       sys = sys.replace(dt=0.005)
       n_frames = 4

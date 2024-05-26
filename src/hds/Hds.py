@@ -10,7 +10,7 @@ from functools import partial
 
 from src.policy.StochasticPolicy import StochasticPolicy
 from src.envs.learnedenv.LearnedPendulum import LearnedPendulum
-from src.envs.original.Pendulum import State
+from src.envs.train.Pendulum import State
 from src.dyn_model.Predict import pretrained_params
 
 

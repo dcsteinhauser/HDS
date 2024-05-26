@@ -17,7 +17,7 @@ from src.policy.DeterministicPolicy import (
     DeterministicPolicy,
     Batch_DeterministicPolicy,
 )
-from src.envs.original.Pendulum import State
+from src.envs.train.Pendulum import State
 import time
 from flax import serialization
 import pickle
@@ -153,7 +153,7 @@ def train(
             return grad, hess
         
         grad, hess = grad_and_hess(actions, prng_key)
-        hess_inv = jnp.linalg.inv(hess)
+        hess_inv = jnp.linalg.inv(jnp.squeeze(hess))
         new_actions = actions + alpha_a * jnp.matmul(hess_inv, grad)
         return new_actions
 
@@ -163,7 +163,7 @@ def train(
         optimizer_state = train_state.optimizer_state
 
         def loss_fn(params, states, actions):
-            model_output = jnp.squeeze(k_POLICY_MODEL.apply(params, states))
+            model_output = k_POLICY_MODEL.apply(params, states)
             return 0.5 * optax.losses.squared_error(model_output, actions).mean()
 
         value, grad = jax.value_and_grad(loss_fn)(params, states, actions)
@@ -175,6 +175,7 @@ def train(
         return value, new_train_state
 
     if second_order:
+        print("[WARNING] Using second order optimization. This may be slow, and suffers from severe numerical instability.")
         update_action_sequence = so_update_action_sequence
     else:
         update_action_sequence = fo_update_action_sequence
@@ -198,7 +199,7 @@ def train(
         )
         total_reward = trajectories[2]
         trajectories = trajectories[:2]
-        trajectories = tuple(map(jnp.squeeze, trajectories))
+    
 
         # output progress
         progress_fn(x_data, y_data, i, jnp.mean(total_reward))
