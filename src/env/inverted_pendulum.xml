@@ -21,11 +21,11 @@
     <light diffuse=".5 .5 .5" pos="0 0 3" dir="0 0 -1"/>
     <!--geom name="ground" type="plane" pos="0 0 0" /-->
     <!-- this down here is the geometry of the rail, second element of size is the length, I think this is purely cosmetic-->
-    <geom name="rail" pos="0 0 0" quat="0.707 0 0.707 0" size="0.02 1000000" type="capsule" rgba="1 1 1 1"/>
+    <geom name="rail" pos="0 0 0" quat="0.707 0 0.707 0" size="0.02 10" type="capsule" rgba="1 1 1 1"/>
     
     <!-- this here is the actual cart and relevant things for physics, the -10,10 is the range of the cart, like how far right left can it go-->
     <body name="cart" pos="0 0 0">
-      <joint axis="1 0 0" limited="true" name="slider" pos="0 0 0" range="-1000000 1000000" type="slide"/>
+      <joint axis="1 0 0" limited="true" name="slider" pos="0 0 0" range="-10 10" type="slide"/>
       <geom name="cart" pos="0 0 0" quat="0.707 0 0.707 0" size="0.1 0.1" type="capsule"/>
       <body name="pole" pos="0 0 0">
         <joint axis="0 1 0" name="hinge" pos="0 0 0" range="-90 90" type="hinge"/>
