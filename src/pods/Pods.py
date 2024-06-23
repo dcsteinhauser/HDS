@@ -110,16 +110,18 @@ def train(
         return states, actions, totalreward
     
     @partial(jax.vmap,in_axes=(0,0,None, None),out_axes=0,axis_name="batch")
-    @jax.jit
+    #@jax.jit
     def fo_update_action_sequence(actions, prng_key, alpha_a, cooling_rate):
 
         def total_reward(actions, prng_key):
         
             def reward_step(states, action):
-                return k_NON_BATCHED_ENV.step(states, action), states.reward
+                rabe =k_NON_BATCHED_ENV.step(states, action)
+                return rabe, states.reward
         
             initial_states = k_NON_BATCHED_ENV.reset(prng_key)
             _, rewards = jax.lax.scan(f=reward_step, init=initial_states, xs=actions)
+            #print(rewards)
             return jnp.sum(rewards, axis=0)
         
 
@@ -143,15 +145,18 @@ def train(
         def cond_fun(tuplething):
             i, _, reward_best, _ = tuplething
             return i< 32
-        
+        #print(total_reward(actions, prng_key))
         grad =  jax.grad(total_reward, argnums=0)(actions, prng_key)
+        #print(grad)
+ 
+
         initial_reward = total_reward(actions, prng_key)
         _, alpha_a_best, _, _ = jax.lax.while_loop(cond_fun, linesearch_backtrackung, (0, alpha_a, initial_reward, initial_reward))
 
         
         new_actions = actions + alpha_a_best * grad
 
-        return new_actions
+        return new_actions, jnp.max(jnp.abs(grad))
     
     @jax.jit
     def update_policy(states, actions, train_state):
@@ -193,11 +198,13 @@ def train(
         total_reward = trajectories[2]
         trajectories = trajectories[:2]
         
-        # output progress
-        progress_fn(x_data,y_data,i,jnp.mean(total_reward), seed)
         
+        actions, gradnormmax = fo_update_action_sequence(trajectories[1], subkeys, alpha_a, 0.98)
+        gradnormmaxmean = jnp.mean(gradnormmax)
+        # output progress
+        progress_fn(x_data,y_data,i,jnp.mean(total_reward), seed, gradnormmaxmean, trajectory_length)
         # update action sequence
-        states, actions = trajectories[0], fo_update_action_sequence(trajectories[1], subkeys, alpha_a, 0.98)
+        states = trajectories[0]
 
         # supervised learning
         for j in range(inner_epochs):
