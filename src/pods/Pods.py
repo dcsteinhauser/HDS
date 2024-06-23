@@ -50,12 +50,14 @@ def train(
     inner_epochs: int,
     alpha_a: float,
     init_learning_rate: float,
-    progress_fn=None):
+    progress_fn=None, seed=0
+    
+    ):
     # Initialize a nonbatched env
     k_NON_BATCHED_ENV = env 
 
     # get a random key
-    key = jax.random.PRNGKey(0)
+    key = jax.random.PRNGKey(seed)
     new_key, subkey = jax.random.split(key)
     
     # Define the policy and initialize it
@@ -130,9 +132,21 @@ def train(
             pred = jnp.logical_or((delta_reward > 0.0), False)
             alpha_a_best = jax.lax.cond(pred, lambda x: alpha_a_k_new, lambda x: alpha_a_k, (alpha_a_k, alpha_a_k_new))
             return alpha_a_best
+        def linesearch_backtrackung(tuplething):
+            i, alpha_a_best, reward_best, reward_init = tuplething
+            alpha_a_k_new = alpha_a/(2**i)
+            reward_new = total_reward(actions + alpha_a_k_new * grad, prng_key)
+            delta_reward = reward_new - reward_best
+            pred = delta_reward > 0.0
+            alpha_a_best, reward_best = jax.lax.cond(pred, lambda x: (alpha_a_k_new, reward_new), lambda x: (alpha_a_best, reward_best),(alpha_a_best, reward_best, alpha_a_k_new, reward_new))
+            return (i+1, alpha_a_best, reward_best, reward_init)
+        def cond_fun(tuplething):
+            i, _, reward_best, _ = tuplething
+            return i< 32
         
         grad =  jax.grad(total_reward, argnums=0)(actions, prng_key)
-        alpha_a_best = jax.lax.fori_loop(0, 50, simulatedannealing, alpha_a)
+        initial_reward = total_reward(actions, prng_key)
+        _, alpha_a_best, _, _ = jax.lax.while_loop(cond_fun, linesearch_backtrackung, (0, alpha_a, initial_reward, initial_reward))
 
         
         new_actions = actions + alpha_a_best * grad
@@ -180,7 +194,7 @@ def train(
         trajectories = trajectories[:2]
         
         # output progress
-        progress_fn(x_data,y_data,i,jnp.mean(total_reward))
+        progress_fn(x_data,y_data,i,jnp.mean(total_reward), seed)
         
         # update action sequence
         states, actions = trajectories[0], fo_update_action_sequence(trajectories[1], subkeys, alpha_a, 0.98)
