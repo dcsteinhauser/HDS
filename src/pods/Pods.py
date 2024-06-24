@@ -50,7 +50,7 @@ def train(
     inner_epochs: int,
     alpha_a: float,
     init_learning_rate: float,
-    progress_fn=None, seed=0
+    progress_fn=None, seed=0, gradplot=False
     
     ):
     # Initialize a nonbatched env
@@ -109,19 +109,17 @@ def train(
 
         return states, actions, totalreward
     
-    @partial(jax.vmap,in_axes=(0,0,None, None),out_axes=0,axis_name="batch")
-    #@jax.jit
-    def fo_update_action_sequence(actions, prng_key, alpha_a, cooling_rate):
+    @partial(jax.vmap,in_axes=(0,0,None, None),out_axes=(0),axis_name="batch")
+    @jax.jit
+    def fo_update_action_sequence2(actions, prng_key, alpha_a, cooling_rate):
 
         def total_reward(actions, prng_key):
         
             def reward_step(states, action):
-                rabe =k_NON_BATCHED_ENV.step(states, action)
-                return rabe, states.reward
+                return k_NON_BATCHED_ENV.step(states, action), states.reward
         
             initial_states = k_NON_BATCHED_ENV.reset(prng_key)
             _, rewards = jax.lax.scan(f=reward_step, init=initial_states, xs=actions)
-            #print(rewards)
             return jnp.sum(rewards, axis=0)
         
 
@@ -144,7 +142,7 @@ def train(
             return (i+1, alpha_a_best, reward_best, reward_init)
         def cond_fun(tuplething):
             i, _, reward_best, _ = tuplething
-            return i< 32
+            return i< 25
         #print(total_reward(actions, prng_key))
         grad =  jax.grad(total_reward, argnums=0)(actions, prng_key)
         #print(grad)
@@ -156,7 +154,28 @@ def train(
         
         new_actions = actions + alpha_a_best * grad
 
-        return new_actions, jnp.max(jnp.abs(grad))
+        return new_actions
+    
+    @partial(jax.vmap,in_axes=(0,0,None, None),out_axes=0,axis_name="batch")
+    @jax.jit
+    def fo_update_action_sequence(actions, prng_key, alpha_a, cooling_rate):
+
+        def total_reward(actions, prng_key):
+        
+            def reward_step(states, action):
+                return k_NON_BATCHED_ENV.step(states, action), states.reward
+        
+            initial_states = k_NON_BATCHED_ENV.reset(prng_key)
+            _, rewards = jax.lax.scan(f=reward_step, init=initial_states, xs=actions)
+            #print(rewards)
+            return jnp.sum(rewards, axis=0)
+        
+        #print(total_reward(actions, prng_key))
+        grad =  jax.grad(total_reward, argnums=0)(actions, prng_key)
+        #print(grad)
+        #_, alpha_a_best, _, _ = jax.lax.while_loop(cond_fun, linesearch_backtrackung, (0, alpha_a, initial_reward, initial_reward))
+
+        return jnp.max(jnp.abs(grad))
     
     @jax.jit
     def update_policy(states, actions, train_state):
@@ -187,33 +206,66 @@ def train(
     x_data = []
     y_data = []
 
-    for i in range(epochs):
+    if not gradplot:
+        for i in range(epochs):
+            # update rng keys
+            print('flag1')
+            key1, key2 = jax.random.split(new_key)
+            new_key = key1
+            subkeys = jax.random.split(key2, num_samples)
+            print('flag2')
+            # generate trajectories
+            trajectories = generate_trajectory_parallel(train_state, trajectory_length, subkeys)
+            total_reward = trajectories[2]
+            trajectories = trajectories[:2]
+            print('flag3')
+
+            states, actions = trajectories[0], fo_update_action_sequence2(trajectories[1], subkeys, alpha_a, 0.98)
+            print('flag4')
+
+            # output progress
+            # update action sequence
+
+            print('flag5')
+            # supervised learning
+            for j in range(inner_epochs):
+                for state_sequence, action_sequence in zip(states, actions):
+                    value,train_state= update_policy(state_sequence, action_sequence, train_state)
+
+                print("big epoch:",i,"small epoch:",j,"Loss",value)
+                if(value<1e-5 or value == jnp.nan):
+                    break
+            print('flag6')
+            x_data.append(i*200*25)
+            y_data.append(jnp.mean(total_reward))
+                
+
+
+
+    else:
+
         # update rng keys
+        print(f'Epoch')
         key1, key2 = jax.random.split(new_key)
         new_key = key1
         subkeys = jax.random.split(key2, num_samples)
-        
         # generate trajectories
-        trajectories = generate_trajectory_parallel(train_state, trajectory_length, subkeys)
-        total_reward = trajectories[2]
-        trajectories = trajectories[:2]
-        
-        
-        actions, gradnormmax = fo_update_action_sequence(trajectories[1], subkeys, alpha_a, 0.98)
-        gradnormmaxmean = jnp.mean(gradnormmax)
+        for t_length in range(5,trajectory_length, 5):
+            print(f'Epoch{t_length}')
+            trajectories = generate_trajectory_parallel(train_state, t_length, subkeys)
+            total_reward = trajectories[2]
+            trajectories = trajectories[:2]
+            gradnormmax = fo_update_action_sequence(trajectories[1], subkeys, alpha_a, 0.98)
+            gradnormmaxmean = jnp.mean(gradnormmax)
         # output progress
-        progress_fn(x_data,y_data,i,jnp.mean(total_reward), seed, gradnormmaxmean, trajectory_length)
         # update action sequence
-        states = trajectories[0]
-
-        # supervised learning
-        for j in range(inner_epochs):
-            for state_sequence, action_sequence in zip(states, actions):
-                value,train_state= update_policy(state_sequence, action_sequence, train_state)
+        
             
-            print("big epoch:",i,"small epoch:",j,"Loss",value)
-            if(value<1e-5 or value == jnp.nan):
-                break
+            x_data.append(t_length)
+            y_data.append(gradnormmaxmean)
+        
+                      
+    progress_fn(x_data,y_data, seed)
         
        
            
