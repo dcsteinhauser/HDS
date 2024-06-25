@@ -250,13 +250,13 @@ def train(
         new_key = key1
         subkeys = jax.random.split(key2, num_samples)
         # generate trajectories
-        for t_length in range(5,trajectory_length, 5):
+        for t_length in range(40,trajectory_length, 1):
             print(f'Epoch{t_length}')
             trajectories = generate_trajectory_parallel(train_state, t_length, subkeys)
             total_reward = trajectories[2]
             trajectories = trajectories[:2]
             gradnormmax = fo_update_action_sequence(trajectories[1], subkeys, alpha_a, 0.98)
-            gradnormmaxmean = jnp.mean(gradnormmax)
+            gradnormmaxmean = jnp.max(gradnormmax)
         # output progress
         # update action sequence
         
