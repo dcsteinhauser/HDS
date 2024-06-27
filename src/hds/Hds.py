@@ -95,9 +95,12 @@ def train(
     # options = orbax.checkpoint.CheckpointManagerOptions(max_to_keep=2, create=True)
     # checkpoint_manager = orbax.checkpoint.CheckpointManager('/home/julianubuntu/Documents/HDS/tmp/flax_ckpt/orbax/managed', orbax_checkpointer, options)
 
-    @partial(jax.vmap, in_axes=(None, None, 0), axis_name="batch")
+    @partial(jax.vmap, in_axes=(None, None, 0, 0), axis_name="batch")
     def generate_trajectory_parallel(
-        train_state: TrainState, trajectory_length: int, prng_keys: PRNGKey
+        train_state: TrainState,
+        trajectory_length: int,
+        prng_keys: PRNGKey,
+        use_learned_env: jnp.ndarray,
     ):
 
         def step_trajectory(state_carry, rng_key):
@@ -110,10 +113,37 @@ def train(
             next_state = k_NON_BATCHED_ENV.step(state_carry, action)
             return next_state, (state_carry.obs, action, next_state.reward)
 
-        state: State = k_NON_BATCHED_ENV.reset(prng_keys)
+        def step_trajectory_learned_env(state_carry, rng_key):
+            action = k_POLICY_MODEL.apply(
+                train_state.policy_params,
+                state_carry.obs,
+                train_state.exploration_noise,
+                rng_key,
+            )
+            next_state = k_LEARNED_ENV.step(
+                state_carry, action, params=train_state.dynamics_model_params
+            )
+            return next_state, (state_carry.obs, action, next_state.reward)
+
+        def select_fn(input):
+            _, (states, actions, rewards_future) = input
+            return states, actions, rewards_future
+
         keys = jax.random.split(prng_keys, trajectory_length)
-        _, (states, actions, rewards_future) = jax.lax.scan(
-            step_trajectory, state, xs=keys
+
+        states, actions, rewards_future = jax.lax.cond(
+            use_learned_env,
+            lambda _: select_fn(
+                jax.lax.scan(
+                    step_trajectory_learned_env, k_LEARNED_ENV.reset(prng_keys), xs=keys
+                )
+            ),
+            lambda _: select_fn(
+                jax.lax.scan(
+                    step_trajectory, k_NON_BATCHED_ENV.reset(prng_keys), xs=keys
+                )
+            ),
+            0,
         )
 
         states = jax.numpy.reshape(
