@@ -15,6 +15,7 @@ from functools import partial
 from src.policy.DeterministicPolicy import DeterministicPolicy
 from src.policy.StochasticPolicy import StochasticPolicy
 from src.envs.goodenv.Pendulum import State
+from src.envs.realistic.RealisticPendulum import RealisticPendulum
 import time
 from flax import serialization
 from flax.training import checkpoints, orbax_utils
@@ -64,6 +65,7 @@ def train(
     k_POLICY_MODEL = StochasticPolicy(
         observation_size=observation_size, action_size=action_size
     )
+    k_LEARNED_ENV = RealisticPendulum ()
     noise = init_noise
     policy_params = k_POLICY_MODEL.init(
         key, jnp.ones((observation_size,)), noise, subkey
