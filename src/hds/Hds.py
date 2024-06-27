@@ -45,6 +45,7 @@ def train(
     epochs: int,
     inner_epochs: int,
     alpha_a: float,
+    aggregation_factor_beta: float,
     init_learning_rate: float,
     init_noise=1.0,
     noise_decay=0.99,
@@ -52,6 +53,7 @@ def train(
 ):
 
     k_NON_BATCHED_ENV = env
+    k_LEARNED_ENV = RealisticPendulum()
     x_data = []
     y_data = []
 
@@ -65,11 +67,14 @@ def train(
     k_POLICY_MODEL = StochasticPolicy(
         observation_size=observation_size, action_size=action_size
     )
-    k_LEARNED_ENV = RealisticPendulum ()
     noise = init_noise
     policy_params = k_POLICY_MODEL.init(
         key, jnp.ones((observation_size,)), noise, subkey
     )
+    num_from_learned_env = int(num_samples * aggregation_factor_beta)
+    from_learned_env = jnp.ones((num_from_learned_env,))
+    from_original_env = jnp.zeros((num_samples - num_from_learned_env,))
+    use_learned_env = jnp.concatenate((from_learned_env, from_original_env))
 
     # Define the optimizer
     scheduler = optax.exponential_decay(
@@ -123,7 +128,7 @@ def train(
                 rng_key,
             )
             next_state = k_LEARNED_ENV.step(
-                state_carry, action, params=train_state.dynamics_model_params
+                state_carry, action#, params=train_state.dynamics_model_params
             )
             return next_state, (state_carry.obs, action, next_state.reward)
 
@@ -232,13 +237,13 @@ def train(
 
         # generate trajectories
         trajectories = generate_trajectory_parallel(
-            train_state, trajectory_length, subkeys
+            train_state, trajectory_length, subkeys,use_learned_env
         )
         average_reward = trajectories[2]
         trajectories = trajectories[:2]
 
         # output progress
-        progress_fn(x_data, y_data, i, jnp.mean(average_reward))
+        # progress_fn(x_data, y_data, i, jnp.mean(average_reward))
 
         # update action sequence
         states, new_actions = trajectories[0], fo_update_action_sequence(
