@@ -239,6 +239,7 @@ def train(
         trajectories = generate_trajectory_parallel(
             train_state, trajectory_length, subkeys,use_learned_env
         )
+        print(trajectories)
         average_reward = trajectories[2]
         trajectories = trajectories[:2]
 
